@@ -99,6 +99,8 @@ Para que otros dispositivos en tu misma red (WiFi o cableada) puedan acceder a t
 
 ## 6. Flujo de Trabajo Diario
 
+> Nota de control de deploy: actualización registrada el **2026-02-17**.
+
 - **Para Iniciar:** Simplemente haz doble clic en el archivo `start-dev-environment.bat`.
 - **Para Acceder Localmente:** Usa `http://localhost:9002` en tu PC.
 - **Para Compartir en tu Red:**
