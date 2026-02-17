@@ -1,9 +1,13 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/alessi2026';
+const defaultMongoUri = process.env.NODE_ENV === 'development'
+  ? 'mongodb://localhost:27017/alessi2026'
+  : undefined;
+
+const MONGODB_URI = process.env.MONGODB_URI || defaultMongoUri;
 
 if (!MONGODB_URI) {
-  throw new Error('Por favor define la variable de entorno MONGODB_URI en .env.local');
+  throw new Error('Por favor define la variable de entorno MONGODB_URI');
 }
 
 /**
