@@ -7,6 +7,7 @@ import { useState, useContext } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react';
@@ -16,7 +17,7 @@ import { useRouter } from 'next/navigation';
 import { signIn } from '@/lib/auth-actions';
 import { useCurrentUser } from '../admin/user-context';
 
-export default function LoginForm({ users }: { users: User[] }) {
+export default function LoginForm({ users, dbError = false }: { users: User[]; dbError?: boolean }) {
     const router = useRouter();
     const { setCurrentUser } = useCurrentUser();
     const { toast } = useToast();
@@ -79,6 +80,13 @@ export default function LoginForm({ users }: { users: User[] }) {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
+                    {dbError && (
+                        <Alert variant="destructive" className="mb-4">
+                            <AlertDescription>
+                                No se pudo conectar a la base de datos. Revisa MongoDB Atlas (Network Access/IP whitelist) y vuelve a intentar.
+                            </AlertDescription>
+                        </Alert>
+                    )}
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="email">Usuario (Email)</Label>
