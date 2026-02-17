@@ -27,6 +27,12 @@ if (!(global as any).mongoose) {
 }
 
 export async function connectToDatabase() {
+  const mongoUri = MONGODB_URI;
+
+  if (!mongoUri) {
+    throw new Error('Por favor define la variable de entorno MONGODB_URI');
+  }
+
   if (cached.conn) {
     return cached.conn;
   }
@@ -36,7 +42,7 @@ export async function connectToDatabase() {
       bufferCommands: false,
     };
 
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongooseInstance) => {
+    cached.promise = mongoose.connect(mongoUri, opts).then((mongooseInstance) => {
       console.log('✅ Conectado a MongoDB');
       return mongooseInstance;
     });
