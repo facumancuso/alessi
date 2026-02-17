@@ -1,0 +1,144 @@
+
+{
+  "entities": {
+    "User": {
+      "title": "Usuario",
+      "description": "Un usuario del sistema con acceso al panel de administración.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Nombre completo del usuario."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Correo electrónico del usuario, usado para iniciar sesión."
+        },
+        "role": {
+          "type": "string",
+          "description": "Rol del usuario que define sus permisos.",
+          "enum": ["Superadmin", "Gerente", "Recepcion", "Peluquero"]
+        },
+        "isActive": {
+            "type": "boolean",
+            "description": "Indica si el usuario está activo en el sistema."
+        }
+      },
+      "required": ["name", "email", "role", "isActive"]
+    },
+    "Client": {
+      "title": "Cliente",
+      "description": "Un cliente de la peluquería.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Código único del cliente." },
+        "name": { "type": "string", "description": "Nombre completo del cliente." },
+        "email": { "type": "string", "format": "email", "description": "Correo electrónico del cliente." },
+        "mobilePhone": { "type": "string", "description": "Teléfono celular del cliente." },
+        "address": { "type": "string", "description": "Domicilio del cliente." },
+        "alias": { "type": "string", "description": "Alias o apodo del cliente." },
+        "location": { "type": "string", "description": "Localidad del cliente." },
+        "postalCode": { "type": "string", "description": "Código postal del cliente." },
+        "landlinePhone": { "type": "string", "description": "Teléfono fijo del cliente." },
+        "dni": { "type": "string", "description": "DNI del cliente." },
+        "cuit": { "type": "string", "description": "CUIT del cliente." },
+        "priceList": { "type": "string", "description": "Lista de precios asignada." },
+        "fantasyName": { "type": "string", "description": "Nombre de fantasía." },
+        "salespersonId": { "type": "string", "description": "ID del vendedor asignado." },
+        "salespersonName": { "type": "string", "description": "Nombre del vendedor asignado." },
+        "clientCategory": { "type": "string", "description": "Categoría del cliente." },
+        "inactive": { "type": "boolean", "description": "Indica si el cliente está inactivo." }
+      },
+      "required": ["code", "name", "email"]
+    },
+    "Appointment": {
+      "title": "Turno",
+      "description": "Una cita programada para un cliente.",
+      "type": "object",
+      "properties": {
+        "assignments": {
+          "type": "array",
+          "description": "Lista de asignaciones de servicio a empleado, cada una con su propia hora y duración.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "serviceId": { "type": "string", "description": "ID del servicio." },
+              "employeeId": { "type": "string", "description": "ID del empleado." },
+              "time": { "type": "string", "format": "time", "description": "Hora de inicio del servicio específico." },
+              "duration": { "type": "number", "description": "Duración en minutos del servicio específico." }
+            },
+            "required": ["serviceId", "employeeId", "time", "duration"]
+          }
+        },
+        "productIds": { "type": "array", "items": { "type": "string" }, "description": "IDs de los productos vendidos." },
+        "customerName": { "type": "string" },
+        "customerEmail": { "type": "string", "format": "email" },
+        "customerPhone": { "type": "string" },
+        "date": { "type": "string", "format": "date", "description": "Fecha del turno (la hora se especifica en cada asignación)." },
+        "status": { "type": "string", "enum": ["confirmed", "cancelled", "completed", "waiting", "no-show", "facturado"] },
+        "notes": { "type": "string", "description": "Notas adicionales sobre el turno." }
+      },
+      "required": ["assignments", "customerName", "customerEmail", "date", "status"]
+    },
+    "Service": {
+      "title": "Servicio",
+      "description": "Un servicio ofrecido por la peluquería.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Código único del servicio." },
+        "name": { "type": "string" },
+        "duration": { "type": "number", "description": "Duración en minutos." },
+        "price": { "type": "number", "description": "Precio en centavos." }
+      },
+      "required": ["code", "name", "duration", "price"]
+    },
+    "Product": {
+      "title": "Producto",
+      "description": "Un producto para la venta.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Código único del producto." },
+        "name": { "type": "string" },
+        "price": { "type": "number", "description": "Precio en centavos." }
+      },
+      "required": ["code", "name", "price"]
+    }
+  },
+  "auth": {
+    "providers": ["password"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Almacena los perfiles de los usuarios del sistema."
+    },
+    "/clients/{clientId}": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Almacena la información de los clientes de la peluquería."
+    },
+    "/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Almacena todas las citas o turnos."
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/Service" },
+      "description": "Almacena los servicios ofrecidos."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Almacena los productos en venta."
+    },
+    "/settings/app": {
+        "schema": {
+            "type": "object",
+            "properties": {
+                "spamProtection": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "description": "Configuraciones globales de la aplicación."
+    }
+  }
+}

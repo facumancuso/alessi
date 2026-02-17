@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 340 100% 97%;
+    --foreground: 340 10% 20%;
+    --card: 340 100% 100%;
+    --card-foreground: 340 10% 20%;
+    --popover: 340 100% 100%;
+    --popover-foreground: 340 10% 20%;
+    --primary: 340 82% 56%;
+    --primary-foreground: 340 100% 98%;
+    --secondary: 340 20% 92%;
+    --secondary-foreground: 340 82% 56%;
+    --muted: 340 20% 92%;
+    --muted-foreground: 340 10% 45%;
+    --accent: 340 90% 65%;
+    --accent-foreground: 340 10% 15%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 340 20% 88%;
+    --input: 340 20% 90%;
+    --ring: 340 82% 56%;
+    --radius: 0.5rem;
+
+    --sidebar-background: var(--card);
+    --sidebar-foreground: var(--card-foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--secondary);
+    --sidebar-accent-foreground: var(--secondary-foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+  }
+
+  .dark {
+    --background: 340 10% 8%;
+    --foreground: 340 10% 95%;
+    --card: 340 10% 8%;
+    --card-foreground: 340 10% 95%;
+    --popover: 340 10% 8%;
+    --popover-foreground: 340 10% 95%;
+    --primary: 340 82% 60%;
+    --primary-foreground: 340 10% 15%;
+    --secondary: 340 10% 15%;
+    --secondary-foreground: 340 10% 95%;
+    --muted: 340 10% 15%;
+    --muted-foreground: 340 10% 60%;
+    --accent: 340 82% 56%;
+    --accent-foreground: 340 10% 95%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 340 10% 15%;
+    --input: 340 10% 15%;
+    --ring: 340 82% 60%;
+    
+    --sidebar-background: var(--card);
+    --sidebar-foreground: var(--card-foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--secondary);
+    --sidebar-accent-foreground: var(--secondary-foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+    
