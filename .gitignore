@@ -45,3 +45,6 @@ next-env.d.ts
 
 # prisma
 /prisma/client
+
+.vercel
+.env*.local

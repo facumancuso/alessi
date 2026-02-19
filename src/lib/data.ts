@@ -4,6 +4,18 @@ import { connectToDatabase } from './mongodb';
 import { ServiceModel, ProductModel, ClientModel, UserModel, AppointmentModel, SettingsModel } from './models';
 import type { Service, Appointment, Product, Client, User } from './types';
 
+function normalizeAppointmentDate(dateValue: unknown): string {
+  if (typeof dateValue === 'string') return dateValue;
+  if (dateValue instanceof Date) return dateValue.toISOString();
+  if (dateValue && typeof (dateValue as any).toString === 'function') {
+    const parsed = new Date((dateValue as any).toString());
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+  return new Date().toISOString();
+}
+
 // ========= SERVICE FUNCTIONS =========
 export async function getServices(): Promise<Service[]> {
   await connectToDatabase();
@@ -107,37 +119,48 @@ export async function batchCreateProducts(products: Partial<Product>[]): Promise
 
 // ========= APPOINTMENT FUNCTIONS =========
 export async function getAppointments(status?: Appointment['status']): Promise<Appointment[]> {
-  await connectToDatabase();
-  const filter = status ? { status } : {};
-  const appointments = await AppointmentModel.find(filter).lean();
+  try {
+    await connectToDatabase();
+    const filter = status ? { status } : {};
+    const appointments = await AppointmentModel.find(filter).lean();
 
-  const allServices = await getServices();
-  const servicesMap = new Map(allServices.map(s => [s.id, s.name]));
+    const allServices = await getServices();
+    const servicesMap = new Map(allServices.map(s => [s.id, s.name]));
 
-  const allUsers = await getUsers();
-  const usersMap = new Map(allUsers.map(u => [u.id, u.name]));
+    const allUsers = await getUsers();
+    const usersMap = new Map(allUsers.map(u => [u.id, u.name]));
 
-  return appointments.map(appt => {
-    const serviceIds = (appt.assignments || []).map(a => a.serviceId);
-    const employeeIds = [...new Set((appt.assignments || []).map(a => a.employeeId))];
+    return appointments.map(appt => {
+      try {
+        const serviceIds = (appt.assignments || []).map(a => a.serviceId);
+        const employeeIds = [...new Set((appt.assignments || []).map(a => a.employeeId))];
 
-    let finalDateStr = appt.date;
-    if (appt.date && appt.assignments && appt.assignments.length > 0 && appt.assignments[0].time) {
-      const datePart = appt.date.substring(0, 10);
-      finalDateStr = `${datePart}T${appt.assignments[0].time}:00`;
-    }
+        const normalizedDate = normalizeAppointmentDate(appt.date);
+        let finalDateStr = normalizedDate;
+        if (normalizedDate && appt.assignments && appt.assignments.length > 0 && appt.assignments[0].time) {
+          const datePart = normalizedDate.substring(0, 10);
+          finalDateStr = `${datePart}T${appt.assignments[0].time}:00`;
+        }
 
-    return {
-      ...appt,
-      id: appt._id!.toString(),
-      _id: undefined,
-      date: finalDateStr,
-      serviceIds: serviceIds,
-      serviceNames: serviceIds.map(id => servicesMap.get(id) || 'Servicio Desconocido'),
-      employeeId: employeeIds[0] || appt.employeeId || '',
-      employeeName: employeeIds.map(id => usersMap.get(id) || 'Empleado desc.').join(', ')
-    } as unknown as Appointment;
-  });
+        return {
+          ...appt,
+          id: appt._id!.toString(),
+          _id: undefined,
+          date: finalDateStr,
+          serviceIds: serviceIds,
+          serviceNames: serviceIds.map(id => servicesMap.get(id) || 'Servicio Desconocido'),
+          employeeId: employeeIds[0] || appt.employeeId || '',
+          employeeName: employeeIds.map(id => usersMap.get(id) || 'Empleado desc.').join(', ')
+        } as unknown as Appointment;
+      } catch (mapError) {
+        console.error('Error mapping appointment:', mapError, appt);
+        throw mapError;
+      }
+    });
+  } catch (error) {
+    console.error('Error in getAppointments:', error);
+    throw error;
+  }
 }
 
 export async function getAppointmentById(id: string): Promise<Appointment | undefined> {
@@ -354,33 +377,44 @@ export async function deleteAllClients(): Promise<{ deletedCount: number }> {
 }
 
 export async function getAppointmentsByClient(email: string): Promise<Appointment[]> {
-  await connectToDatabase();
-  const appointments = await AppointmentModel.find({ customerEmail: email }).lean();
+  try {
+    await connectToDatabase();
+    const appointments = await AppointmentModel.find({ customerEmail: email }).lean();
 
-  const [allServices, allUsers] = await Promise.all([getServices(), getUsers()]);
-  const servicesMap = new Map(allServices.map(s => [s.id, s.name]));
-  const usersMap = new Map(allUsers.map(u => [u.id, u.name]));
+    const [allServices, allUsers] = await Promise.all([getServices(), getUsers()]);
+    const servicesMap = new Map(allServices.map(s => [s.id, s.name]));
+    const usersMap = new Map(allUsers.map(u => [u.id, u.name]));
 
-  const sorted = appointments.map(appt => {
-    const firstAssignment = appt.assignments && appt.assignments.length > 0 ? appt.assignments[0] : null;
+    const sorted = appointments.map(appt => {
+      try {
+        const firstAssignment = appt.assignments && appt.assignments.length > 0 ? appt.assignments[0] : null;
 
-    let finalDateStr = appt.date;
-    if (appt.date && firstAssignment?.time) {
-      const datePart = appt.date.substring(0, 10);
-      finalDateStr = `${datePart}T${firstAssignment.time}:00`;
-    }
+        const normalizedDate = normalizeAppointmentDate(appt.date);
+        let finalDateStr = normalizedDate;
+        if (normalizedDate && firstAssignment?.time) {
+          const datePart = normalizedDate.substring(0, 10);
+          finalDateStr = `${datePart}T${firstAssignment.time}:00`;
+        }
 
-    return {
-      ...appt,
-      id: appt._id!.toString(),
-      _id: undefined,
-      date: finalDateStr,
-      serviceNames: (appt.assignments || []).map(a => servicesMap.get(a.serviceId) || 'Servicio Desconocido'),
-      employeeName: firstAssignment ? (usersMap.get(firstAssignment.employeeId) || 'Empleado desc.') : (appt.employeeName || '')
-    } as unknown as Appointment;
-  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return {
+          ...appt,
+          id: appt._id!.toString(),
+          _id: undefined,
+          date: finalDateStr,
+          serviceNames: (appt.assignments || []).map(a => servicesMap.get(a.serviceId) || 'Servicio Desconocido'),
+          employeeName: firstAssignment ? (usersMap.get(firstAssignment.employeeId) || 'Empleado desc.') : (appt.employeeName || '')
+        } as unknown as Appointment;
+      } catch (mapError) {
+        console.error('Error mapping client appointment:', mapError, appt);
+        throw mapError;
+      }
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  return sorted;
+    return sorted;
+  } catch (error) {
+    console.error('Error in getAppointmentsByClient:', error);
+    throw error;
+  }
 }
 
 // ========= USER FUNCTIONS =========

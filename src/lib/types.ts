@@ -20,6 +20,7 @@ export interface AppointmentAssignment {
     serviceId: string;
     time: string;
     duration: number;
+    productIds?: string[];
 }
 
 export interface Appointment {

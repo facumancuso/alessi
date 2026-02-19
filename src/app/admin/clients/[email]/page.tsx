@@ -23,19 +23,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { getClientByEmail, getAppointmentsByClient, getServices, getProducts } from "@/lib/data";
+import { getClientByEmail, getAppointmentsByClient, getServices, getProducts, getUsers } from "@/lib/data";
 import { updateAppointment, updateAppointmentStatus } from "@/lib/actions";
 import { notFound } from "next/navigation";
 import { format, isToday } from "date-fns";
 import { es } from "date-fns/locale";
-import { Calendar, Clock, DollarSign, ArrowLeft, Package, Scissors, User, Briefcase, PlusCircle, Loader2, Play, Check, X, StickyNote, Plus, Minus, AlertCircle, Pencil } from "lucide-react";
+import { Calendar, Clock, DollarSign, ArrowLeft, Package, Scissors, Briefcase, PlusCircle, Loader2, Play, Check, X, StickyNote, Plus, Minus, AlertCircle, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Appointment, Client, Service, Product, AppointmentAssignment } from "@/lib/types";
+import type { Appointment, Client, Service, Product, AppointmentAssignment, User as AppUser } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { useCurrentUser } from '../../user-context';
 import { ClientModal } from '@/components/client-modal';
 
@@ -63,6 +64,7 @@ export default function ClientDetailPage() {
   const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
   const [allServices, setAllServices] = useState<Service[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [allEmployees, setAllEmployees] = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUpdating, startUpdateTransition] = useTransition();
 
@@ -78,42 +80,34 @@ export default function ClientDetailPage() {
     return { upcomingAppointment: upcoming, pastAppointments: past };
   }, [allAppointments]);
 
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [editableAssignments, setEditableAssignments] = useState<AppointmentAssignment[]>([]);
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
     getServices().then(setAllServices);
     getProducts().then(setAllProducts);
+    getUsers().then(setAllEmployees);
   }, []);
 
   useEffect(() => {
     if (upcomingAppointment) {
-        setSelectedProductIds(upcomingAppointment.productIds || []);
+        const normalizedAssignments = (upcomingAppointment.assignments || []).map((assignment, index) => ({
+          ...assignment,
+          productIds: assignment.productIds || (index === 0 ? (upcomingAppointment.productIds || []) : []),
+        }));
+        setEditableAssignments(normalizedAssignments);
         setNotes(upcomingAppointment.notes || '');
+    } else {
+        setEditableAssignments([]);
+        setNotes('');
     }
   }, [upcomingAppointment]);
 
-  const groupedProducts = useMemo(() => {
-    const productCounts: { [key: string]: { product: Product, count: number } } = {};
-    (selectedProductIds || []).forEach(id => {
-      const product = allProducts.find(p => p.id === id);
-      if (product) {
-        if (productCounts[id]) {
-          productCounts[id].count++;
-        } else {
-          productCounts[id] = { product, count: 1 };
-        }
-      }
-    });
-    return Object.values(productCounts);
-  }, [selectedProductIds, allProducts]);
-
 
   const { totalDuration } = useMemo(() => {
-    if (!upcomingAppointment) return { totalDuration: 0 };
-    const duration = (upcomingAppointment.assignments || []).reduce((sum, s) => sum + (s.duration || 0), 0);
+    const duration = editableAssignments.reduce((sum, s) => sum + (s.duration || 0), 0);
     return { totalDuration: duration };
-  }, [upcomingAppointment]);
+  }, [editableAssignments]);
   
   const fetchClientData = async () => {
     setLoading(true);
@@ -210,64 +204,79 @@ export default function ClientDetailPage() {
 
       const newAssignment: AppointmentAssignment = {
           serviceId: service.id,
-          employeeId: currentUser?.id || '', // Default to current user or handle differently
+          employeeId: currentUser?.id || editableAssignments[0]?.employeeId || '',
           time: format(new Date(), 'HH:mm'), // Default to now
           duration: service.duration,
+          productIds: [],
       };
 
-      const newAssignments = [...(upcomingAppointment.assignments || []), newAssignment];
-
-      startUpdateTransition(async () => {
-        const updatedAppt = await updateAppointment(upcomingAppointment.id, { assignments: newAssignments });
-        if (updatedAppt) {
-            setAllAppointments(prev => prev.map(a => a.id === updatedAppt.id ? updatedAppt : a));
-            toast({title: "Servicio añadido"});
-        }
-      });
+      setEditableAssignments(prev => [...prev, newAssignment]);
   }
 
   const handleRemoveAssignment = (assignmentIndex: number) => {
-      if(!upcomingAppointment) return;
-      if (assignmentIndex < 0 || assignmentIndex >= (upcomingAppointment.assignments || []).length) return;
-
-      const newAssignments = [...(upcomingAppointment.assignments || [])];
+      if (assignmentIndex < 0 || assignmentIndex >= editableAssignments.length) return;
+      const newAssignments = [...editableAssignments];
       newAssignments.splice(assignmentIndex, 1);
-      
-      startUpdateTransition(async () => {
-        const updatedAppt = await updateAppointment(upcomingAppointment.id, { assignments: newAssignments });
-        if (updatedAppt) {
-            setAllAppointments(prev => prev.map(a => a.id === updatedAppt.id ? updatedAppt : a));
-            toast({title: "Servicio eliminado"});
-        }
-      });
+      setEditableAssignments(newAssignments);
   }
 
-  const handleAddProduct = (productId: string) => {
-    if (!productId || !upcomingAppointment) return;
-    const newProductIds = [...(selectedProductIds || []), productId];
-    startUpdateTransition(async () => {
-        const updatedAppt = await updateAppointment(upcomingAppointment.id, { productIds: newProductIds });
-        if (updatedAppt) {
-            setAllAppointments(prev => prev.map(a => a.id === updatedAppt.id ? updatedAppt : a));
-            setSelectedProductIds(updatedAppt.productIds || []);
-            toast({title: "Producto añadido"});
-        }
-    });
+  const handleUpdateAssignment = (assignmentIndex: number, field: keyof AppointmentAssignment, value: string | number) => {
+    const nextAssignments = [...editableAssignments];
+    const target = { ...nextAssignments[assignmentIndex], [field]: value };
+
+    if (field === 'serviceId') {
+      const service = allServices.find(s => s.id === value);
+      if (service) {
+        target.duration = service.duration;
+      }
+    }
+
+    nextAssignments[assignmentIndex] = target;
+    setEditableAssignments(nextAssignments);
   }
-  
-  const handleRemoveProduct = (productId: string) => {
+
+  const handleAddProductToAssignment = (assignmentIndex: number, productId: string) => {
+    if (!productId) return;
+    const nextAssignments = [...editableAssignments];
+    const current = nextAssignments[assignmentIndex];
+    nextAssignments[assignmentIndex] = {
+      ...current,
+      productIds: [...(current.productIds || []), productId],
+    };
+    setEditableAssignments(nextAssignments);
+  }
+
+  const handleRemoveProductFromAssignment = (assignmentIndex: number, productPosition: number) => {
+    const nextAssignments = [...editableAssignments];
+    const current = nextAssignments[assignmentIndex];
+    const productIds = [...(current.productIds || [])];
+    productIds.splice(productPosition, 1);
+    nextAssignments[assignmentIndex] = {
+      ...current,
+      productIds,
+    };
+    setEditableAssignments(nextAssignments);
+  }
+
+  const handleSaveAssignments = () => {
     if (!upcomingAppointment) return;
-    const indexToRemove = selectedProductIds.lastIndexOf(productId);
-    if (indexToRemove === -1) return;
-    const newProductIds = [...selectedProductIds];
-    newProductIds.splice(indexToRemove, 1);
+
+    if (editableAssignments.some(a => !a.serviceId || !a.employeeId || !a.time || !a.duration)) {
+      toast({ variant: 'destructive', title: 'Faltan datos', description: 'Completá servicio, empleado, hora y duración en cada fila.' });
+      return;
+    }
+
     startUpdateTransition(async () => {
-        const updatedAppt = await updateAppointment(upcomingAppointment.id, { productIds: newProductIds });
-        if (updatedAppt) {
-            setAllAppointments(prev => prev.map(a => a.id === updatedAppt.id ? updatedAppt : a));
-            setSelectedProductIds(updatedAppt.productIds || []);
-            toast({title: "Producto eliminado"});
-        }
+      const aggregatedProductIds = editableAssignments.flatMap(a => a.productIds || []);
+      const updatedAppt = await updateAppointment(upcomingAppointment.id, {
+        assignments: editableAssignments,
+        productIds: aggregatedProductIds,
+      });
+
+      if (updatedAppt) {
+        setAllAppointments(prev => prev.map(a => a.id === updatedAppt.id ? updatedAppt : a));
+        toast({ title: 'Servicios guardados' });
+      }
     });
   }
 
@@ -406,47 +415,68 @@ export default function ClientDetailPage() {
                         <CardContent className="space-y-4">
                             <div>
                                 <h4 className="font-semibold text-sm mb-2">Servicios en este turno</h4>
-                                <div className="space-y-1 text-sm">
-                                    {(upcomingAppointment.assignments || []).map((assignment, index) => {
+                              <div className="space-y-2 text-sm">
+                                {editableAssignments.map((assignment, index) => {
                                         const service = allServices.find(s => s.id === assignment.serviceId);
+                                  const employee = allEmployees.find(e => e.id === assignment.employeeId);
                                         return (
-                                            <div key={`${assignment.serviceId}-${index}`} className="flex items-center justify-between gap-2 bg-secondary/50 p-2 rounded-md">
-                                                <span className="flex items-center gap-2"><Scissors className="h-4 w-4 text-muted-foreground"/> {service?.name || 'Servicio desconocido'}</span>
-                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveAssignment(index)} disabled={isUpdating}><X className="h-4 w-4"/></Button>
+                                    <div key={`${assignment.serviceId}-${index}`} className="space-y-2 bg-secondary/50 p-2 rounded-md">
+                                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                                        <Select value={assignment.serviceId} onValueChange={(value) => handleUpdateAssignment(index, 'serviceId', value)} disabled={isUpdating}>
+                                          <SelectTrigger><SelectValue placeholder="Servicio..." /></SelectTrigger>
+                                          <SelectContent>
+                                            {allServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                          </SelectContent>
+                                        </Select>
+                                        <Select value={assignment.employeeId} onValueChange={(value) => handleUpdateAssignment(index, 'employeeId', value)} disabled={isUpdating}>
+                                          <SelectTrigger><SelectValue placeholder="Empleado..." /></SelectTrigger>
+                                          <SelectContent>
+                                            {allEmployees.filter(e => e.role === 'Peluquero').map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
+                                          </SelectContent>
+                                        </Select>
+                                        <Input type="time" value={assignment.time || ''} onChange={(e) => handleUpdateAssignment(index, 'time', e.target.value)} disabled={isUpdating} />
+                                        <div className="flex items-center gap-2">
+                                          <Input type="number" value={assignment.duration || 0} onChange={(e) => handleUpdateAssignment(index, 'duration', parseInt(e.target.value || '0', 10))} disabled={isUpdating} />
+                                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveAssignment(index)} disabled={isUpdating}><X className="h-4 w-4"/></Button>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="text-xs text-muted-foreground">{service?.name || 'Servicio desconocido'} · {employee?.name || 'Empleado sin asignar'}</div>
+                                        <Select onValueChange={(value) => handleAddProductToAssignment(index, value)} disabled={isUpdating} value="">
+                                          <SelectTrigger><SelectValue placeholder="Añadir producto para este empleado..." /></SelectTrigger>
+                                          <SelectContent>
+                                            {allProducts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                                          </SelectContent>
+                                        </Select>
+                                        <div className="flex flex-wrap gap-1">
+                                          {(assignment.productIds || []).map((productId, productIndex) => {
+                                            const product = allProducts.find(p => p.id === productId);
+                                            return (
+                                              <Badge key={`${productId}-${productIndex}`} variant="outline" className="flex items-center gap-1">
+                                                <Package className="h-3 w-3 text-muted-foreground" />
+                                                {product?.name || 'Producto'}
+                                                <button onClick={() => handleRemoveProductFromAssignment(index, productIndex)} disabled={isUpdating} className="rounded-full hover:bg-black/20">
+                                                  <X className="h-3 w-3" />
+                                                </button>
+                                              </Badge>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
                                             </div>
                                         );
                                     })}
-                                    {(upcomingAppointment.assignments || []).length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Ningún servicio añadido.</p>}
+                                {editableAssignments.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Ningún servicio añadido.</p>}
                                 </div>
                                 <Select onValueChange={handleAddAssignment} disabled={isUpdating} value="">
                                     <SelectTrigger className="mt-2"><SelectValue placeholder="Añadir servicio..." /></SelectTrigger>
                                     <SelectContent>
-                                        {allServices.filter(s => !(upcomingAppointment.assignments || []).map(a => a.serviceId).includes(s.id)).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                  {allServices.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
-                            </div>
-                            <Separator />
-                             <div>
-                                <h4 className="font-semibold text-sm mb-2">Productos en este turno</h4>
-                                <div className="space-y-1 text-sm">
-                                     {groupedProducts.map(({ product, count }) => (
-                                        <div key={product.id} className="flex items-center justify-between gap-2 bg-secondary/50 p-2 rounded-md">
-                                            <span className="flex items-center gap-2"><Package className="h-4 w-4 text-muted-foreground"/> {product.name}</span>
-                                            <div className="flex items-center gap-1">
-                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveProduct(product.id)} disabled={isUpdating}><Minus className="h-4 w-4"/></Button>
-                                                <span className="w-4 text-center">{count}</span>
-                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleAddProduct(product.id)} disabled={isUpdating}><Plus className="h-4 w-4"/></Button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {groupedProducts.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Ningún producto añadido.</p>}
-                                </div>
-                                <Select onValueChange={handleAddProduct} value="" disabled={isUpdating}>
-                                    <SelectTrigger className="mt-2"><SelectValue placeholder="Añadir producto..." /></SelectTrigger>
-                                    <SelectContent>
-                                        {allProducts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
+                              <Button onClick={handleSaveAssignments} disabled={isUpdating} size="sm" className="mt-2">
+                                Guardar servicios y productos
+                              </Button>
                             </div>
                             <Separator/>
                             <div>

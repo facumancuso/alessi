@@ -66,6 +66,7 @@ const appointmentAssignmentSchema = new Schema<AppointmentAssignment>({
   serviceId: { type: String, required: true },
   time: { type: String, required: true },
   duration: { type: Number, required: true },
+  productIds: [{ type: String }],
 }, { _id: false });
 
 const appointmentSchema = new Schema<Appointment>({

@@ -45,7 +45,6 @@ export default function NewAppointmentPage() {
     const [customerEmail, setCustomerEmail] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [assignments, setAssignments] = useState<Partial<AppointmentAssignment>[]>([]);
-    const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
     const [date, setDate] = useState<Date | undefined>();
     const [notes, setNotes] = useState('');
     const [currentStatus, setCurrentStatus] = useState<Appointment['status'] | undefined>('confirmed');
@@ -60,8 +59,8 @@ export default function NewAppointmentPage() {
     const [allProducts, setAllProducts] = useState<Product[]>([]);
     
     const [isClientModalOpen, setIsClientModalOpen] = useState(false);
-    const [productSearchOpen, setProductSearchOpen] = useState(false);
     const [serviceSearchOpen, setServiceSearchOpen] = useState<number | null>(null);
+    const [assignmentProductSearchOpen, setAssignmentProductSearchOpen] = useState<string | null>(null);
 
     
     const isReceptionOrAdmin = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
@@ -88,8 +87,11 @@ export default function NewAppointmentPage() {
                         setCustomerName(appt.customerName || '');
                         setCustomerEmail(appt.customerEmail || '');
                         setCustomerPhone(appt.customerPhone || '');
-                        setAssignments(appt.assignments || []);
-                        setSelectedProductIds(appt.productIds || []);
+                        const normalizedAssignments = (appt.assignments || []).map((assignment, index) => ({
+                            ...assignment,
+                            productIds: assignment.productIds || (index === 0 ? (appt.productIds || []) : []),
+                        }));
+                        setAssignments(normalizedAssignments);
                         setDate(appt.date ? new Date(appt.date) : new Date());
                         setNotes(appt.notes || '');
                         setCurrentStatus(appt.status);
@@ -126,18 +128,24 @@ export default function NewAppointmentPage() {
         }))
     , [assignments, allServices]);
 
-    const selectedProducts = useMemo(() => allProducts.filter(p => selectedProductIds.includes(p.id)), [selectedProductIds, allProducts]);
+    const selectedProductIds = useMemo(
+        () => assignments.flatMap(a => a.productIds || []),
+        [assignments]
+    );
 
     const { totalDuration, totalPrice } = useMemo(() => {
         const servicesDuration = assignments.reduce((sum, a) => sum + (a.duration || 0), 0);
         const servicesPrice = selectedServicesDetails.reduce((sum, a) => sum + (a.service?.price || 0), 0);
-        const productsPrice = selectedProducts.reduce((sum, p) => sum + p.price, 0);
+        const productsPrice = selectedProductIds.reduce((sum, productId) => {
+            const product = allProducts.find(p => p.id === productId);
+            return sum + (product?.price || 0);
+        }, 0);
         
         return {
         totalDuration: servicesDuration,
         totalPrice: (servicesPrice + productsPrice) / 100
         };
-    }, [assignments, selectedServicesDetails, selectedProducts]);
+    }, [assignments, selectedServicesDetails, selectedProductIds, allProducts]);
 
 
     const handleSave = () => {
@@ -159,7 +167,7 @@ export default function NewAppointmentPage() {
                 customerEmail,
                 customerPhone,
                 assignments: finalAssignments,
-                productIds: selectedProductIds,
+                productIds: finalAssignments.flatMap(a => a.productIds || []),
                 date: date.toISOString(),
                 status: currentStatus,
                 notes,
@@ -251,6 +259,30 @@ export default function NewAppointmentPage() {
         newAssignments.splice(index, 1);
         setAssignments(newAssignments);
     }
+
+    const getAssignmentProductSearchKey = (index: number) => `${index}`;
+
+    const addProductToAssignment = (assignmentIndex: number, productId: string) => {
+        const newAssignments = [...assignments];
+        const assignment = newAssignments[assignmentIndex];
+        const currentProductIds = assignment.productIds || [];
+        newAssignments[assignmentIndex] = {
+            ...assignment,
+            productIds: [...currentProductIds, productId],
+        };
+        setAssignments(newAssignments);
+    }
+
+    const removeProductFromAssignment = (assignmentIndex: number, productPosition: number) => {
+        const newAssignments = [...assignments];
+        const assignment = newAssignments[assignmentIndex];
+        const currentProductIds = assignment.productIds || [];
+        newAssignments[assignmentIndex] = {
+            ...assignment,
+            productIds: [...currentProductIds.slice(0, productPosition), ...currentProductIds.slice(productPosition + 1)],
+        };
+        setAssignments(newAssignments);
+    }
     
      if (isLoading) {
         return <div className="flex justify-center items-center h-48"><Loader2 className="h-8 w-8 animate-spin" /></div>;
@@ -319,6 +351,7 @@ export default function NewAppointmentPage() {
                                         <TableHead className="min-w-[150px]">Empleado</TableHead>
                                         <TableHead className="min-w-[100px]">Hora</TableHead>
                                         <TableHead className="w-[100px]">Duración</TableHead>
+                                        <TableHead className="min-w-[220px]">Productos</TableHead>
                                         <TableHead className="w-[50px]"></TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -371,6 +404,58 @@ export default function NewAppointmentPage() {
                                                 <Input type="number" value={assignment.duration || 0} onChange={(e) => updateAssignment(index, 'duration', parseInt(e.target.value, 10))} disabled={!canEdit}/>
                                             </TableCell>
                                             <TableCell>
+                                                <Popover
+                                                    open={assignmentProductSearchOpen === getAssignmentProductSearchKey(index)}
+                                                    onOpenChange={(isOpen) => setAssignmentProductSearchOpen(isOpen ? getAssignmentProductSearchKey(index) : null)}
+                                                >
+                                                    <PopoverTrigger asChild disabled={!canEdit}>
+                                                        <Button variant="outline" role="combobox" className="w-full justify-between">
+                                                            Añadir producto...
+                                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                                                        <Command>
+                                                            <CommandInput placeholder="Buscar por código o nombre..." />
+                                                            <CommandList>
+                                                                <CommandEmpty>No se encontraron productos.</CommandEmpty>
+                                                                <CommandGroup>
+                                                                    {allProducts.map(p => (
+                                                                        <CommandItem
+                                                                            key={p.id}
+                                                                            value={`${p.code} ${p.name}`}
+                                                                            onSelect={() => {
+                                                                                addProductToAssignment(index, p.id);
+                                                                                setAssignmentProductSearchOpen(null);
+                                                                            }}
+                                                                        >
+                                                                            {p.code} - {p.name}
+                                                                        </CommandItem>
+                                                                    ))}
+                                                                </CommandGroup>
+                                                            </CommandList>
+                                                        </Command>
+                                                    </PopoverContent>
+                                                </Popover>
+                                                <div className="flex flex-wrap gap-1 mt-2">
+                                                    {(assignment.productIds || []).map((productId, productIndex) => {
+                                                        const product = allProducts.find(p => p.id === productId);
+                                                        return (
+                                                            <Badge key={`${productId}-${productIndex}`} variant="outline" className="flex items-center gap-1">
+                                                                {product?.name}
+                                                                <button
+                                                                    onClick={() => removeProductFromAssignment(index, productIndex)}
+                                                                    className="rounded-full hover:bg-black/20"
+                                                                    disabled={!canEdit}
+                                                                >
+                                                                    <X className="h-3 w-3"/>
+                                                                </button>
+                                                            </Badge>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
                                                 <Button variant="ghost" size="icon" onClick={() => removeAssignment(index)} disabled={!canEdit}>
                                                     <Trash2 className="h-4 w-4 text-destructive"/>
                                                 </Button>
@@ -381,48 +466,6 @@ export default function NewAppointmentPage() {
                             </Table>
                             </div>
                             <Button variant="outline" onClick={addAssignment} disabled={!canEdit}>Añadir Servicio</Button>
-                            
-                             <Separator />
-
-                            <div className="space-y-2">
-                                <Label>Productos</Label>
-                                <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
-                                    <PopoverTrigger asChild disabled={!canEdit}>
-                                        <Button variant="outline" role="combobox" aria-expanded={productSearchOpen} className="w-full justify-between">
-                                            Añadir producto...
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                        <Command>
-                                            <CommandInput placeholder="Buscar por código o nombre..." />
-                                            <CommandList>
-                                                <CommandEmpty>No se encontraron productos.</CommandEmpty>
-                                                <CommandGroup>
-                                                    {allProducts.map(p => (
-                                                        <CommandItem
-                                                            key={p.id}
-                                                            value={`${p.code} ${p.name}`}
-                                                            onSelect={() => {
-                                                                setSelectedProductIds([...selectedProductIds, p.id]);
-                                                                setProductSearchOpen(false);
-                                                            }}
-                                                        >
-                                                            {p.code} - {p.name}
-                                                        </CommandItem>
-                                                    ))}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                    {selectedProductIds.map((id, index) => {
-                                        const product = allProducts.find(p => p.id === id);
-                                        return <Badge key={`${id}-${index}`} variant="outline" className="flex items-center gap-1">{product?.name} <button onClick={() => { if(!canEdit) return; const productIndex = selectedProductIds.indexOf(id, index); if (productIndex > -1) setSelectedProductIds([...selectedProductIds.slice(0, productIndex), ...selectedProductIds.slice(productIndex + 1)])}} className="rounded-full hover:bg-black/20" disabled={!canEdit}><X className="h-3 w-3"/></button></Badge>
-                                    })}
-                                </div>
-                            </div>
                         </CardContent>
                     </Card>
                     
