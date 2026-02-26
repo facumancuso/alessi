@@ -18,10 +18,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getAppointments } from "@/lib/data";
-import { completeAppointment, exportAppointments } from "@/lib/actions";
-import { format, toDate } from 'date-fns';
+import { completeAppointment, deleteAppointment, exportAppointments } from "@/lib/actions";
+import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Check, Download, Calendar as CalendarIcon, Filter, Loader2 } from "lucide-react";
+import { Check, Download, Calendar as CalendarIcon, Filter, Loader2, Trash2 } from "lucide-react";
 import { useTransition, useState, useEffect, useMemo } from "react";
 import type { Appointment } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
@@ -52,6 +52,45 @@ function CompleteButton({ appointmentId, onComplete }: { appointmentId: string, 
     )
 }
 
+function DeleteButton({ appointmentId, onDeleted }: { appointmentId: string, onDeleted: () => void }) {
+    const [isPending, startTransition] = useTransition();
+    const { toast } = useToast();
+
+    const handleDelete = () => {
+        if (!window.confirm('¿Eliminar este turno? Esta acción no se puede deshacer.')) {
+            return;
+        }
+
+        startTransition(async () => {
+            const result = await deleteAppointment(appointmentId);
+            if (result.success) {
+                toast({ title: 'Turno eliminado', description: 'El turno fue eliminado correctamente.' });
+                onDeleted();
+            } else {
+                toast({ variant: 'destructive', title: 'Error', description: result.message });
+            }
+        });
+    };
+
+    return (
+        <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isPending}>
+            {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            Eliminar
+        </Button>
+    );
+}
+
+const getStatusLabel = (status: Appointment['status']) => {
+    if (status === 'confirmed') return 'Confirmado';
+    if (status === 'waiting') return 'En espera';
+    if (status === 'in_progress') return 'En proceso';
+    if (status === 'completed') return 'Terminado';
+    if (status === 'cancelled') return 'Cancelado';
+    if (status === 'no-show') return 'No asistió';
+    if (status === 'facturado') return 'Facturado';
+    return status;
+};
+
 export default function AppointmentsPage() {
     const { currentUser } = useCurrentUser();
     const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
@@ -60,7 +99,7 @@ export default function AppointmentsPage() {
     const { toast } = useToast();
     
     const fetchAppointments = () => {
-        getAppointments('confirmed').then(setAllAppointments);
+        getAppointments().then(setAllAppointments);
     };
     
     useEffect(() => {
@@ -78,6 +117,13 @@ export default function AppointmentsPage() {
             })
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     }, [allAppointments, date]);
+
+    const filteredConfirmedAppointments = useMemo(
+        () => filteredAppointments.filter(appt => appt.status === 'confirmed'),
+        [filteredAppointments]
+    );
+
+    const canDeleteAppointments = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
 
     const canManageExports = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente';
 
@@ -101,6 +147,7 @@ export default function AppointmentsPage() {
     };
 
     return (
+        <div className="space-y-6">
         <Card>
             <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
@@ -145,7 +192,7 @@ export default function AppointmentsPage() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {filteredAppointments.length > 0 ? filteredAppointments.map((appt) => (
+                        {filteredConfirmedAppointments.length > 0 ? filteredConfirmedAppointments.map((appt) => (
                             <TableRow key={appt.id}>
                                 <TableCell>
                                     <div className="font-medium">{appt.customerName}</div>
@@ -173,5 +220,54 @@ export default function AppointmentsPage() {
                 </Table>
             </CardContent>
         </Card>
+
+        {canDeleteAppointments && (
+        <Card>
+            <CardHeader>
+                <CardTitle>Eliminar Turnos</CardTitle>
+                <CardDescription>Sección rápida para eliminar turnos del día seleccionado sin entrar a cada ficha.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Hora</TableHead>
+                            <TableHead>Cliente</TableHead>
+                            <TableHead>Servicio</TableHead>
+                            <TableHead>Estado</TableHead>
+                            <TableHead className="text-right">Acción</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {filteredAppointments.length > 0 ? filteredAppointments.map((appt) => (
+                            <TableRow key={`delete-${appt.id}`}>
+                                <TableCell>{format(new Date(appt.date), "p", { locale: es })}</TableCell>
+                                <TableCell>
+                                    <div className="font-medium">{appt.customerName}</div>
+                                    <div className="text-sm text-muted-foreground">{appt.customerEmail}</div>
+                                </TableCell>
+                                <TableCell>{(Array.isArray(appt.serviceNames) ? appt.serviceNames.join(', ') : appt.serviceNames)}</TableCell>
+                                <TableCell>
+                                    <Badge variant={appt.status === 'cancelled' ? 'destructive' : appt.status === 'completed' || appt.status === 'facturado' ? 'secondary' : 'outline'}>
+                                        {getStatusLabel(appt.status)}
+                                    </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <DeleteButton appointmentId={appt.id} onDeleted={fetchAppointments} />
+                                </TableCell>
+                            </TableRow>
+                        )) : (
+                            <TableRow>
+                                <TableCell colSpan={5} className="h-24 text-center">
+                                    No hay turnos para eliminar en esta fecha.
+                                </TableCell>
+                            </TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+        )}
+        </div>
     );
 }
