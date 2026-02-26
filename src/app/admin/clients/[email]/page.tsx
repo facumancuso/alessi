@@ -44,7 +44,9 @@ import { ClientModal } from '@/components/client-modal';
 function getBadgeVariant(status: Appointment['status']) {
     switch (status) {
         case 'confirmed': return 'default';
+    case 'in_progress': return 'default';
         case 'cancelled': return 'destructive';
+    case 'no-show': return 'destructive';
         case 'completed': return 'secondary';
         case 'waiting': return 'outline';
         case 'facturado': return 'default';
@@ -69,19 +71,30 @@ export default function ClientDetailPage() {
   const [isUpdating, startUpdateTransition] = useTransition();
 
   const [isAlertOpen, setIsAlertOpen] = useState(false);
-  const [alertAction, setAlertAction] = useState<'start' | 'finish' | null>(null);
+  const [alertAction, setAlertAction] = useState<'arrive' | 'start' | 'finish' | null>(null);
   const [alertTitle, setAlertTitle] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
 
   const { upcomingAppointment, pastAppointments } = useMemo(() => {
     const sorted = [...allAppointments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    const upcoming = sorted.find(appt => isToday(new Date(appt.date)) && (appt.status === 'confirmed' || appt.status === 'waiting'));
+    const upcoming = sorted.find(appt => isToday(new Date(appt.date)) && (appt.status === 'confirmed' || appt.status === 'waiting' || appt.status === 'in_progress'));
     const past = sorted.filter(appt => appt.id !== upcoming?.id);
     return { upcomingAppointment: upcoming, pastAppointments: past };
   }, [allAppointments]);
 
   const [editableAssignments, setEditableAssignments] = useState<AppointmentAssignment[]>([]);
   const [notes, setNotes] = useState('');
+
+  const getStatusLabel = (status: Appointment['status']) => {
+    if (status === 'confirmed') return 'Confirmado';
+    if (status === 'waiting') return 'En espera';
+    if (status === 'in_progress') return 'En proceso';
+    if (status === 'completed') return 'Terminado';
+    if (status === 'cancelled') return 'Cancelado';
+    if (status === 'no-show') return 'No asistió';
+    if (status === 'facturado') return 'Facturado';
+    return status;
+  }
 
   useEffect(() => {
     getServices().then(setAllServices);
@@ -150,25 +163,39 @@ export default function ClientDetailPage() {
       });
   };
 
-  const openConfirmationAlert = (action: 'start' | 'finish') => {
+  const openConfirmationAlert = (action: 'arrive' | 'start' | 'finish') => {
     setAlertAction(action);
-    if (action === 'start') {
-        setAlertTitle('¿Iniciar Turno?');
+    if (action === 'arrive') {
+        setAlertTitle('¿Marcar cliente en espera?');
         setAlertDescription('Esto marcará el turno como "en espera" y notificará al peluquero. ¿Continuar?');
+    } else if (action === 'start') {
+        setAlertTitle('¿Iniciar atención?');
+        setAlertDescription('Esto marcará el turno como "en proceso" para indicar que el cliente está siendo atendido. ¿Continuar?');
     } else {
         setAlertTitle('¿Finalizar Turno?');
-        setAlertDescription('Esto marcará el turno como "completado" y lo enviará a facturación. ¿Continuar?');
+        setAlertDescription('Esto marcará el turno como "terminado" y notificará a recepción. ¿Continuar?');
     }
     setIsAlertOpen(true);
   };
 
-  const handleStartAppointment = async () => {
+  const handleMarkWaiting = async () => {
     if (!upcomingAppointment) return;
     startUpdateTransition(async () => {
       const updatedAppt = await updateAppointmentStatus(upcomingAppointment.id, 'waiting');
+      if (updatedAppt) {
+        setAllAppointments(prev => prev.map(a => a.id === updatedAppt.id ? updatedAppt : a));
+        toast({ title: 'Cliente en espera', description: 'Peluqueros notificados en el panel.' });
+      }
+    });
+  }
+
+  const handleStartAppointment = async () => {
+    if (!upcomingAppointment) return;
+    startUpdateTransition(async () => {
+      const updatedAppt = await updateAppointmentStatus(upcomingAppointment.id, 'in_progress');
        if (updatedAppt) {
          setAllAppointments(prev => prev.map(a => a.id === updatedAppt.id ? updatedAppt : a));
-         toast({ title: 'Turno Iniciado' });
+         toast({ title: 'Turno en proceso' });
        }
     });
   }
@@ -177,7 +204,7 @@ export default function ClientDetailPage() {
     if (!upcomingAppointment) return;
     startUpdateTransition(async () => {
        await updateAppointmentStatus(upcomingAppointment.id, 'completed');
-       toast({ title: 'Turno Finalizado' });
+       toast({ title: 'Turno Finalizado', description: 'Recepción notificada en el panel.' });
         if (currentUser?.role === 'Peluquero') {
             router.push('/admin/my-day');
         } else {
@@ -188,7 +215,9 @@ export default function ClientDetailPage() {
 
 
   const handleConfirmAction = () => {
-    if (alertAction === 'start') {
+    if (alertAction === 'arrive') {
+      handleMarkWaiting();
+    } else if (alertAction === 'start') {
         handleStartAppointment();
     } else if (alertAction === 'finish') {
         handleFinishAppointment();
@@ -288,7 +317,8 @@ export default function ClientDetailPage() {
     }
   }
 
-  const canManageAppointmentStatus = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Peluquero';
+  const canMarkWaiting = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
+  const canProcessAppointment = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Peluquero';
   const canManageClientData = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente';
   const isHairdresser = currentUser?.role === 'Peluquero';
 
@@ -377,16 +407,25 @@ export default function ClientDetailPage() {
                     </CardContent>
                 </Card>
                 
-                {canManageAppointmentStatus && upcomingAppointment && (
+                {(canMarkWaiting || canProcessAppointment) && upcomingAppointment && (
                     <Card>
                       <CardHeader><CardTitle>Acciones del Turno</CardTitle></CardHeader>
                       <CardContent className="flex w-full gap-2 pt-2">
-                        <Button className="flex-1" variant="outline" onClick={() => openConfirmationAlert('start')} disabled={isUpdating || upcomingAppointment.status !== 'confirmed'}>
-                            {isUpdating ? <Loader2 className="animate-spin"/> : <Play className="mr-2"/>} Iniciar
-                        </Button>
-                        <Button className="flex-1" onClick={() => openConfirmationAlert('finish')} disabled={isUpdating || upcomingAppointment.status !== 'waiting'}>
-                            {isUpdating ? <Loader2 className="animate-spin"/> : <Check className="mr-2"/>} Finalizar
-                        </Button>
+                        {canMarkWaiting && (
+                          <Button className="flex-1" variant="outline" onClick={() => openConfirmationAlert('arrive')} disabled={isUpdating || upcomingAppointment.status !== 'confirmed'}>
+                              {isUpdating ? <Loader2 className="animate-spin"/> : <AlertCircle className="mr-2"/>} En espera
+                          </Button>
+                        )}
+                        {canProcessAppointment && (
+                          <Button className="flex-1" variant="outline" onClick={() => openConfirmationAlert('start')} disabled={isUpdating || upcomingAppointment.status !== 'waiting'}>
+                              {isUpdating ? <Loader2 className="animate-spin"/> : <Play className="mr-2"/>} Iniciar
+                          </Button>
+                        )}
+                        {canProcessAppointment && (
+                          <Button className="flex-1" onClick={() => openConfirmationAlert('finish')} disabled={isUpdating || upcomingAppointment.status !== 'in_progress'}>
+                              {isUpdating ? <Loader2 className="animate-spin"/> : <Check className="mr-2"/>} Finalizar
+                          </Button>
+                        )}
                       </CardContent>
                     </Card>
                 )}
@@ -401,7 +440,7 @@ export default function ClientDetailPage() {
                                     <CardTitle>Turno Actual</CardTitle>
                                     <CardDescription>
                                         {format(new Date(upcomingAppointment.date), "PPP 'a las' p", { locale: es })}
-                                        <Badge variant={getBadgeVariant(upcomingAppointment.status)} className="ml-2 capitalize">{upcomingAppointment.status}</Badge>
+                                        <Badge variant={getBadgeVariant(upcomingAppointment.status)} className="ml-2">{getStatusLabel(upcomingAppointment.status)}</Badge>
                                     </CardDescription>
                                 </div>
                                 <Button variant="outline" size="sm" asChild>
@@ -520,7 +559,7 @@ export default function ClientDetailPage() {
                                         </p>
                                     </div>
                                     <Badge variant={getBadgeVariant(appt.status)} className="capitalize self-start">
-                                        {appt.status === 'confirmed' ? 'Confirmado' : appt.status === 'cancelled' ? 'Cancelado' : appt.status === 'completed' ? 'Completado' : appt.status}
+                                        {getStatusLabel(appt.status)}
                                     </Badge>
                                 </div>
                                 <Separator />

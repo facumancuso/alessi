@@ -81,7 +81,7 @@ const appointmentSchema = new Schema<Appointment>({
   status: { 
     type: String, 
     required: true, 
-    enum: ['confirmed', 'cancelled', 'completed', 'waiting', 'no-show', 'facturado'],
+    enum: ['confirmed', 'waiting', 'in_progress', 'completed', 'cancelled', 'no-show', 'facturado'],
     default: 'confirmed'
   },
   notes: { type: String },

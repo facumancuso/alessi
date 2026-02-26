@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAppointments, getUsers, getAppointmentsByClient, getClientByEmail } from '@/lib/data';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, setHours, setMinutes, addMinutes, differenceInMinutes } from 'date-fns';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, setHours, setMinutes, addMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Calendar as CalendarIcon, Filter, Clock, PlusCircle, Loader2, Upload, Download, Edit } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -40,6 +40,7 @@ const fallbackColor = { bg: 'bg-gray-100', text: 'text-gray-800', border: 'borde
 const statusColors: Record<Appointment['status'], string> = {
     'confirmed': 'border-pink-500',
     'waiting': 'border-yellow-500 animate-pulse',
+    'in_progress': 'border-orange-500',
     'completed': 'border-green-500',
     'cancelled': 'border-red-500 opacity-70',
     'no-show': 'border-gray-500 opacity-70',
@@ -49,7 +50,8 @@ const statusColors: Record<Appointment['status'], string> = {
 const statusLabels: Record<Appointment['status'], string> = {
     'confirmed': 'Confirmado',
     'waiting': 'En espera',
-    'completed': 'Completado',
+    'in_progress': 'En proceso',
+    'completed': 'Terminado',
     'cancelled': 'Cancelado',
     'no-show': 'No asistió',
     'facturado': 'Facturado'
@@ -58,6 +60,7 @@ const statusLabels: Record<Appointment['status'], string> = {
 const statusPillStyles: Record<Appointment['status'], string> = {
     'confirmed': 'bg-pink-100 text-pink-800',
     'waiting': 'bg-yellow-100 text-yellow-800',
+    'in_progress': 'bg-orange-100 text-orange-800',
     'completed': 'bg-green-100 text-green-800',
     'cancelled': 'bg-red-100 text-red-800',
     'no-show': 'bg-gray-100 text-gray-800',
@@ -204,14 +207,7 @@ function DayView({
                                                 const top = getEventTop(assignment.time);
                                                 const height = getEventHeight(assignment.duration);
 
-                                                const appointmentDate = new Date(appt.date);
-                                                const serviceDate = new Date(`${format(appointmentDate, 'yyyy-MM-dd')}T${assignment.time}`);
-
-                                                const minutesToAppt = differenceInMinutes(serviceDate, now);
-                                                let currentStatus = appt.status;
-                                                if (currentStatus === 'confirmed' && isSameDay(day, new Date()) && minutesToAppt <= 15 && minutesToAppt > -assignment.duration) {
-                                                    currentStatus = 'waiting';
-                                                }
+                                                const currentStatus = appt.status;
 
                                                 const serviceName = appt.serviceNames?.[assignIndex] || 'Servicio';
                                                 const appointmentColorClasses = getAppointmentColorClasses(appt, day);

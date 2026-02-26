@@ -25,21 +25,26 @@ import { WhatsAppDashboardButton } from "@/components/whatsapp-dashboard-button"
 import { useCurrentUser } from "./user-context";
 import { Loader2, Play, Check, Clock, User as UserIcon, Scissors } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { startAppointment, completeAppointment } from "@/lib/actions";
+import { markAppointmentWaiting, startAppointment, completeAppointment } from "@/lib/actions";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 interface NextAppointmentCardProps {
     appointment: Appointment;
+    role?: User['role'];
+    onArrive: (id: string) => void;
     onStart: (id: string) => void;
     onComplete: (id: string) => void;
     isProcessing: boolean;
-    canManageStatus: boolean;
 }
 
-function NextAppointmentCard({ appointment, onStart, onComplete, isProcessing, canManageStatus }: NextAppointmentCardProps) {
+function NextAppointmentCard({ appointment, role, onArrive, onStart, onComplete, isProcessing }: NextAppointmentCardProps) {
     const appointmentDate = new Date(appointment.date);
+    const canMarkArrival = (role === 'Recepcion' || role === 'Gerente' || role === 'Superadmin') && appointment.status === 'confirmed';
+    const canStart = (role === 'Peluquero' || role === 'Gerente' || role === 'Superadmin') && appointment.status === 'waiting';
+    const canComplete = (role === 'Peluquero' || role === 'Gerente' || role === 'Superadmin') && appointment.status === 'in_progress';
+
     return (
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border p-4 rounded-lg">
             <div className="space-y-2">
@@ -54,16 +59,26 @@ function NextAppointmentCard({ appointment, onStart, onComplete, isProcessing, c
                     <p className="flex items-center gap-2 text-sm"><Scissors className="h-4 w-4 text-muted-foreground"/> {(Array.isArray(appointment.serviceNames) ? appointment.serviceNames.join(', ') : appointment.serviceNames)}</p>
                 </div>
             </div>
-            {canManageStatus && (
-                <div className="flex gap-2 w-full md:w-auto self-end">
+            {(canMarkArrival || canStart || canComplete) && (
+                <div className="flex gap-2 w-full md:w-auto self-end flex-wrap">
+                    {canMarkArrival && (
+                        <Button className="w-full" variant="outline" onClick={() => onArrive(appointment.id)} disabled={isProcessing}>
+                            {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : <Clock className="h-4 w-4" />}
+                            <span className="ml-2">En espera</span>
+                        </Button>
+                    )}
+                    {canStart && (
                     <Button className="w-full" variant="outline" onClick={() => onStart(appointment.id)} disabled={isProcessing}>
                         {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : <Play className="h-4 w-4" />}
                         <span className="ml-2">Iniciar</span>
                     </Button>
+                    )}
+                    {canComplete && (
                     <Button className="w-full" onClick={() => onComplete(appointment.id)} disabled={isProcessing}>
                         {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4" />}
                         <span className="ml-2">Finalizar</span>
                     </Button>
+                    )}
                 </div>
             )}
         </div>
@@ -106,12 +121,13 @@ export default function DashboardPage() {
 
     const nextAppointmentsByEmployee = useMemo(() => {
         const nextAppointments: Record<string, Appointment> = {};
+        const activeStatuses: Appointment['status'][] = ['confirmed', 'waiting', 'in_progress'];
 
         allEmployees.forEach(employee => {
             const nextAppt = dailyAppointments.find(appt => 
                 (appt.assignments || []).some(a => a.employeeId === employee.id) &&
-                appt.status === 'confirmed' && 
-                isFuture(new Date(appt.date))
+                activeStatuses.includes(appt.status) &&
+                (appt.status !== 'confirmed' || isFuture(new Date(appt.date)))
             );
             if (nextAppt) {
                 if (!nextAppointments[nextAppt.id]) {
@@ -132,10 +148,18 @@ export default function DashboardPage() {
         });
     }
 
+    const handleArrivalAppointment = (id: string) => {
+        startTransition(async () => {
+            await markAppointmentWaiting(id);
+            toast({ title: "Cliente en espera", description: "El turno se marcó como 'En Espera'. Empleados notificados en el panel." });
+            fetchPageData();
+        });
+    }
+
     const handleCompleteAppointment = (id: string) => {
         startTransition(async () => {
             await completeAppointment(id);
-            toast({ title: "Turno completado", description: "El turno ha sido marcado como 'Finalizado'." });
+            toast({ title: "Turno completado", description: "El turno fue marcado como 'Terminado'. Recepción notificada en el panel." });
             fetchPageData();
         });
     }
@@ -143,18 +167,12 @@ export default function DashboardPage() {
     type DisplayStatus = 'Confirmado' | 'En Espera' | 'En Proceso' | 'Finalizado' | 'Cancelado' | 'No Presentado' | 'Facturado';
 
     const getDisplayStatus = (appt: Appointment): DisplayStatus => {
-        const minutesToAppt = differenceInMinutes(new Date(appt.date), now);
-
         if (appt.status === 'completed') return 'Finalizado';
         if (appt.status === 'cancelled') return 'Cancelado';
         if (appt.status === 'no-show') return 'No Presentado';
         if (appt.status === 'facturado') return 'Facturado';
-        if (appt.status === 'waiting') return 'En Proceso';
-
-        if (appt.status === 'confirmed' && minutesToAppt <= 15 && minutesToAppt > -60) {
-            // Consideramos 'En Espera' desde 15 mins antes hasta 60 mins después de la hora del turno si no ha iniciado
-            return 'En Espera';
-        }
+        if (appt.status === 'in_progress') return 'En Proceso';
+        if (appt.status === 'waiting') return 'En Espera';
         
         return 'Confirmado';
     };
@@ -173,7 +191,7 @@ export default function DashboardPage() {
     }
 
 
-    const canManageStatus = currentUser?.role !== 'Recepcion';
+    const currentRole = currentUser?.role;
 
     if (loading) {
         return <div className="flex justify-center items-center h-48"><Loader2 className="h-8 w-8 animate-spin" /></div>;
@@ -193,10 +211,11 @@ export default function DashboardPage() {
                                 <NextAppointmentCard 
                                     key={appt.id}
                                     appointment={appt}
+                                    role={currentRole}
+                                    onArrive={handleArrivalAppointment}
                                     onStart={handleStartAppointment}
                                     onComplete={handleCompleteAppointment}
                                     isProcessing={isProcessing}
-                                    canManageStatus={canManageStatus}
                                 />
                             ))}
                         </div>
@@ -244,7 +263,19 @@ export default function DashboardPage() {
                                     </TableCell>
                                     <TableCell className="text-right">
                                         {appt.status === 'confirmed' && <WhatsAppDashboardButton appointment={appt} />}
-                                        {canManageStatus && appt.status === 'waiting' && (
+                                        {(currentRole === 'Recepcion' || currentRole === 'Gerente' || currentRole === 'Superadmin') && appt.status === 'confirmed' && (
+                                            <Button size="sm" variant="outline" onClick={() => handleArrivalAppointment(appt.id)} disabled={isProcessing}>
+                                                <Clock className="mr-2 h-4 w-4" />
+                                                En espera
+                                            </Button>
+                                        )}
+                                        {(currentRole === 'Peluquero' || currentRole === 'Gerente' || currentRole === 'Superadmin') && appt.status === 'waiting' && (
+                                            <Button size="sm" variant="outline" onClick={() => handleStartAppointment(appt.id)} disabled={isProcessing}>
+                                                <Play className="mr-2 h-4 w-4" />
+                                                Iniciar
+                                            </Button>
+                                        )}
+                                        {(currentRole === 'Peluquero' || currentRole === 'Gerente' || currentRole === 'Superadmin') && appt.status === 'in_progress' && (
                                             <Button size="sm" onClick={() => handleCompleteAppointment(appt.id)} disabled={isProcessing}>
                                                 <Check className="mr-2 h-4 w-4" />
                                                 Finalizar

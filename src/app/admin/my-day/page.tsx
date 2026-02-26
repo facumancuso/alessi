@@ -80,6 +80,7 @@ export default function MyDayPage() {
     switch (status) {
       case 'completed': return 'secondary';
       case 'cancelled': return 'destructive';
+      case 'in_progress': return 'default';
       case 'waiting': return 'default';
       default: return 'outline';
     }
@@ -87,10 +88,11 @@ export default function MyDayPage() {
 
    const getStatusText = (status: Appointment['status']) => {
         const statusMap = {
-            'completed': 'Completado',
+          'completed': 'Terminado',
             'cancelled': 'Cancelado',
             'confirmed': 'Confirmado',
             'waiting': 'En Espera',
+          'in_progress': 'En Proceso',
             'no-show': 'No Presentado',
             'facturado': 'Facturado'
         }

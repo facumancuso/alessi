@@ -28,16 +28,18 @@ export function ClientHistoryModal({ isOpen, onClose, appointments, clientName, 
       case 'completed': return 'secondary';
       case 'cancelled': return 'destructive';
       case 'no-show': return 'destructive';
+      case 'in_progress': return 'default';
       case 'waiting': return 'default';
       default: return 'outline';
     }
   }
   const getStatusText = (status: Appointment['status']) => {
     const statusMap = {
-        'completed': 'Completado',
+        'completed': 'Terminado',
         'cancelled': 'Cancelado',
         'confirmed': 'Confirmado',
         'waiting': 'En Espera',
+        'in_progress': 'En Proceso',
         'no-show': 'No se presentó',
         'facturado': 'Facturado'
     }

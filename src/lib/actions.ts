@@ -226,8 +226,12 @@ export async function updateAppointmentStatus(id: string, status: Appointment['s
     return appointment;
 }
 
-export async function startAppointment(id: string) {
+export async function markAppointmentWaiting(id: string) {
     return updateAppointmentStatus(id, 'waiting');
+}
+
+export async function startAppointment(id: string) {
+    return updateAppointmentStatus(id, 'in_progress');
 }
 
 export async function completeAppointment(id: string) {

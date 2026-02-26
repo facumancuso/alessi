@@ -33,7 +33,7 @@ export interface Appointment {
     customerPhone?: string;
     date: string; // Changed from Date to string to pass safely from server to client
     duration?: number; // Now represents total duration, might be calculated
-    status: 'confirmed' | 'cancelled' | 'completed' | 'waiting' | 'no-show' | 'facturado';
+    status: 'confirmed' | 'waiting' | 'in_progress' | 'completed' | 'cancelled' | 'no-show' | 'facturado';
     notes?: string;
     // Deprecated fields, will be removed in the future
     employeeId?: string;
