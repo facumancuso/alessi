@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ClientSearchModal } from '@/components/client-search-modal';
+import { sortEmployeesByAgendaOrder } from '@/lib/employee-order';
 
 
 export default function NewAppointmentPage() {
@@ -77,7 +78,11 @@ export default function NewAppointmentPage() {
                     getProducts()
                 ]);
 
-                setEmployees(users.filter(u => u.role === 'Peluquero'));
+                const sortedEmployees = sortEmployeesByAgendaOrder(
+                    users.filter(u => u.role === 'Peluquero')
+                );
+
+                setEmployees(sortedEmployees);
                 setAllServices(services);
                 setAllProducts(products);
 

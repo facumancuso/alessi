@@ -20,6 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { ClientSearchModal } from '@/components/client-search-modal';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { sortEmployeesByAgendaOrder } from '@/lib/employee-order';
 
 type FastAssignment = AppointmentAssignment & {
     assignmentId: number;
@@ -65,7 +66,9 @@ export default function FastEntryPage() {
             getServices(),
             getProducts(),
         ]).then(([employees, services, products]) => {
-            setAllEmployees(employees);
+            const sortedEmployees = sortEmployeesByAgendaOrder(employees);
+
+            setAllEmployees(sortedEmployees);
             setAllServices(services);
             setAllProducts(products);
             setIsLoadingData(false);

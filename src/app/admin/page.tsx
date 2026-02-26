@@ -29,6 +29,7 @@ import { markAppointmentWaiting, startAppointment, completeAppointment } from "@
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { sortEmployeesByAgendaOrder } from "@/lib/employee-order";
 
 interface NextAppointmentCardProps {
     appointment: Appointment;
@@ -110,7 +111,11 @@ export default function DashboardPage() {
                 .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             
             setDailyAppointments(todayAppointments);
-            setAllEmployees(allUsers.filter(u => u.role === 'Peluquero' && u.isActive));
+            const sortedEmployees = sortEmployeesByAgendaOrder(
+                allUsers.filter(u => u.role === 'Peluquero' && u.isActive)
+            );
+
+            setAllEmployees(sortedEmployees);
             setLoading(false);
         });
     }

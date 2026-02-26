@@ -23,6 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { importData, exportAppointments } from '@/lib/actions';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import { sortEmployeesByAgendaOrder } from '@/lib/employee-order';
 
 const employeeColors = [
     { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-500' },
@@ -153,7 +154,7 @@ function DayView({
                 </div>
             </div>
             <ScrollArea className="w-full whitespace-nowrap" style={{ height: '68vh' }}>
-                <div className="relative flex pt-4" style={{ height: totalHours * hourHeight }}>
+                <div className="relative flex" style={{ height: totalHours * hourHeight }}>
                     <div className="sticky left-0 bg-card z-20 w-16 md:w-20 text-right pr-2 border-r">
                         {timeSlots.map((time) => {
                             return (
@@ -298,17 +299,7 @@ export default function AgendaPage() {
 
                 setAppointments(appointmentsData);
 
-                const preferredOrder = ['Miguel Alessi', 'Viviana', 'Ines', 'Yami', 'Noe', 'Fede', 'Gonza'];
-                const sortedEmployees = [...employeesData].sort((a, b) => {
-                    const indexA = preferredOrder.indexOf(a.name);
-                    const indexB = preferredOrder.indexOf(b.name);
-                    if (indexA !== -1 && indexB !== -1) {
-                        return indexA - indexB;
-                    }
-                    if (indexA !== -1) return -1;
-                    if (indexB !== -1) return 1;
-                    return a.name.localeCompare(b.name);
-                });
+                const sortedEmployees = sortEmployeesByAgendaOrder(employeesData);
 
                 setAllEmployees(sortedEmployees);
             } catch (error) {
