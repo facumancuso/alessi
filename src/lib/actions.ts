@@ -201,6 +201,26 @@ export async function updateAppointment(id: string, data: Partial<Appointment>):
     }
 }
 
+export async function createAppointment(data: Partial<Omit<Appointment, 'id' | 'status'>>): Promise<Appointment> {
+    try {
+        const createdAppointment = await createAppointmentData(data);
+
+        revalidatePath('/admin/agenda');
+        if (createdAppointment?.customerEmail) {
+            revalidatePath(`/admin/clients/${encodeURIComponent(createdAppointment.customerEmail)}`);
+        }
+        revalidatePath('/admin/my-day');
+        revalidatePath('/admin');
+        revalidatePath('/admin/appointments');
+        revalidatePath('/admin/billing');
+
+        return createdAppointment;
+    } catch (error) {
+        console.error('Failed to create appointment:', error);
+        throw new Error("No se pudo crear el turno.");
+    }
+}
+
 export async function updateAppointmentStatus(id: string, status: Appointment['status']): Promise<Appointment | undefined> {
     const appointment = await updateAppointment(id, { status });
     return appointment;

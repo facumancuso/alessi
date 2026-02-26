@@ -29,7 +29,7 @@ const employeeColors = [
     { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-500' },
     { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-500' },
     { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-500' },
-    { bg: 'bg-indigo-100_100', text: 'text-indigo-800', border: 'border-indigo-500' },
+    { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-500' },
     { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-500' },
     { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-500' },
 ];
@@ -46,6 +46,24 @@ const statusColors: Record<Appointment['status'], string> = {
     'facturado': 'border-blue-500'
 }
 
+const statusLabels: Record<Appointment['status'], string> = {
+    'confirmed': 'Confirmado',
+    'waiting': 'En espera',
+    'completed': 'Completado',
+    'cancelled': 'Cancelado',
+    'no-show': 'No asistió',
+    'facturado': 'Facturado'
+}
+
+const statusPillStyles: Record<Appointment['status'], string> = {
+    'confirmed': 'bg-pink-100 text-pink-800',
+    'waiting': 'bg-yellow-100 text-yellow-800',
+    'completed': 'bg-green-100 text-green-800',
+    'cancelled': 'bg-red-100 text-red-800',
+    'no-show': 'bg-gray-100 text-gray-800',
+    'facturado': 'bg-blue-100 text-blue-800'
+}
+
 const hourOptions = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 
 function DayView({
@@ -54,6 +72,7 @@ function DayView({
   viewEndHour,
   viewInterval,
   getAppointmentsForDay,
+    getAppointmentColorClasses,
   handleEditAppointment,
   handleNewAppointment,
   canManageAgenda,
@@ -67,6 +86,7 @@ function DayView({
   viewEndHour: number;
   viewInterval: number;
   getAppointmentsForDay: (day: Date, employeeId?: string) => Appointment[];
+    getAppointmentColorClasses: (appointment: Appointment, day: Date) => { card: string; pill: string };
   handleEditAppointment: (appointment: Appointment) => void;
   handleNewAppointment: (day: Date, time: string, employeeId: string) => void;
   canManageAgenda: boolean;
@@ -76,7 +96,7 @@ function DayView({
   allEmployees: User[];
 }) {
     const timeIndicatorRef = useRef<HTMLDivElement>(null);
-    const minuteHeight = 1.2;
+    const minuteHeight = 1.3;
     const hourHeight = 60 * minuteHeight;
     const totalHours = viewEndHour - viewStartHour;
     const safeInterval = Number.isFinite(viewInterval) && viewInterval > 0 ? viewInterval : 30;
@@ -99,6 +119,8 @@ function DayView({
         : -1;
 
     const rowHeight = safeInterval * minuteHeight;
+    const minEmployeeColumnWidth = employeeFilter !== 'todos' ? 200 : 160;
+    const employeeGridTemplate = `repeat(${Math.max(visibleEmployees.length, 1)}, minmax(${minEmployeeColumnWidth}px, 1fr))`;
     
     useEffect(() => {
         if (timeIndicatorRef.current && isSameDay(day, now)) {
@@ -116,20 +138,20 @@ function DayView({
 
     return (
         <div className="flex flex-col">
-            <div className="flex sticky top-0 bg-card z-30 border-b">
-                 <div className="w-20 flex-shrink-0 border-r pt-4"></div>
-                 <div className="flex flex-1">
+            <div className="flex sticky top-0 bg-card/95 backdrop-blur z-30 border-b">
+                 <div className="w-16 md:w-20 flex-shrink-0 border-r pt-4"></div>
+                 <div className="grid flex-1" style={{ gridTemplateColumns: employeeGridTemplate }}>
                     {visibleEmployees.map(employee => (
-                        <div key={employee.id} className="flex-1 min-w-[20vw] lg:min-w-[10vw] border-l p-2 text-center font-semibold text-sm">
+                        <div key={employee.id} className="border-l px-2 py-3 text-center font-semibold text-xs md:text-sm leading-tight">
                             {employee.name}
                             <Badge variant="secondary" className="ml-2">{getAppointmentsForDay(day, employee.id).length}</Badge>
                         </div>
                     ))}
                 </div>
             </div>
-            <ScrollArea className="w-full whitespace-nowrap" style={{ height: '70vh' }}>
+            <ScrollArea className="w-full whitespace-nowrap" style={{ height: '68vh' }}>
                 <div className="relative flex pt-4" style={{ height: totalHours * hourHeight }}>
-                    <div className="sticky left-0 bg-card z-20 w-20 text-right pr-2 ">
+                    <div className="sticky left-0 bg-card z-20 w-16 md:w-20 text-right pr-2 border-r">
                         {timeSlots.map((time) => {
                             return (
                                 <div key={time} className="relative text-xs text-muted-foreground" style={{ height: rowHeight }}>
@@ -141,31 +163,33 @@ function DayView({
                         })}
                     </div>
 
-                    <div className="flex flex-1">
+                    <div className="grid flex-1" style={{ gridTemplateColumns: employeeGridTemplate }}>
                         {nowIndicatorTop > 0 && (
                             <div
                                 ref={timeIndicatorRef}
-                                className="absolute w-full h-px bg-red-500 z-40"
-                                style={{ top: nowIndicatorTop }}
+                                className="absolute right-0 h-px bg-red-500 z-40"
+                                style={{ top: nowIndicatorTop, left: '4rem' }}
                             >
-                                <div className="absolute -left-2 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500"></div>
+                                <div className="absolute -left-1 md:-left-2 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500"></div>
                             </div>
                         )}
                         {visibleEmployees.map((employee) => {
                             const dailyAppointments = getAppointmentsForDay(day, employee.id);
                             
                             return (
-                                <div key={employee.id} className="flex-1 min-w-[20vw] lg:min-w-[10vw] border-l relative">
+                                <div key={employee.id} className="border-l relative min-w-[160px] md:min-w-[180px]">
                                     {timeSlots.map((time, index) => {
-                                        const [h, m] = time.split(':').map(Number);
-                                        let borderStyle = 'border-dotted';
-                                        if (m === 0) borderStyle = 'border-solid';
-                                        if (m === 30) borderStyle = 'border-dashed';
+                                        const [, m] = time.split(':').map(Number);
+                                        const rowClass = m === 0
+                                            ? 'border-border/70'
+                                            : m === 30
+                                                ? 'border-border/50 border-dashed'
+                                                : 'border-border/30 border-dotted';
 
                                         return (
                                         <div 
                                             key={time} 
-                                            className={cn("absolute w-full border-t", canManageAgenda && "cursor-pointer hover:bg-secondary/50", borderStyle)} 
+                                            className={cn("absolute w-full border-t", canManageAgenda && "cursor-pointer hover:bg-secondary/60 transition-colors", rowClass)} 
                                             style={{ top: index * rowHeight, height: rowHeight }}
                                             onClick={() => canManageAgenda && handleNewAppointment(day, time, employee.id)}
                                         ></div>
@@ -190,25 +214,31 @@ function DayView({
                                                 }
 
                                                 const serviceName = appt.serviceNames?.[assignIndex] || 'Servicio';
+                                                const appointmentColorClasses = getAppointmentColorClasses(appt, day);
+                                                const visualHeight = Math.max(height, 44);
 
                                                 return (
                                                     <div 
                                                         key={`${appt.id}-${assignIndex}`}
                                                         className={cn(
-                                                            "absolute left-1 right-1 p-2 rounded-lg cursor-pointer hover:opacity-80 z-10 overflow-hidden border-l-4", 
-                                                            color.bg, 
-                                                            color.text, 
-                                                            statusColors[currentStatus]
+                                                            "absolute left-2 right-2 rounded-xl cursor-pointer z-10 overflow-hidden border-l-4 border shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20",
+                                                            appointmentColorClasses.card
                                                         )}
-                                                        style={{ top, height }}
+                                                        style={{ top, height: visualHeight }}
                                                         onClick={() => handleEditAppointment(appt)}
                                                     >
-                                                        <p className="font-semibold text-sm truncate">{appt.customerName}</p>
-                                                        <p className="text-xs truncate">{serviceName}</p>
-                                                        <p className="text-xs flex items-center gap-1">
-                                                            <Clock className="w-3 h-3" />
-                                                            {assignment.time} - {format(addMinutes(serviceDate, assignment.duration), 'p', { locale: es })}
-                                                        </p>
+                                                        <div className="px-2 py-1.5 md:px-2.5 md:py-2 space-y-1">
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <p className="font-semibold text-xs md:text-sm truncate">{appt.customerName}</p>
+                                                                <span className={cn(
+                                                                    "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                                                                    appointmentColorClasses.pill
+                                                                )}>
+                                                                    {statusLabels[currentStatus]}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[11px] md:text-xs truncate">{serviceName}</p>
+                                                        </div>
                                                     </div>
                                                 );
                                             })
@@ -262,33 +292,50 @@ export default function AgendaPage() {
 
 
   useEffect(() => {
-    Promise.all([
-        getAppointments(),
-        getUsers().then(users => users.filter(u => u.role === 'Peluquero' && u.isActive))
-    ]).then(([appointmentsData, employeesData]) => {
-        setAppointments(appointmentsData);
-        
-        const preferredOrder = ['Miguel Alessi', 'Viviana', 'Ines', 'Yami', 'Noe', 'Fede', 'Gonza'];
-        const sortedEmployees = [...employeesData].sort((a, b) => {
-            const indexA = preferredOrder.indexOf(a.name);
-            const indexB = preferredOrder.indexOf(b.name);
-            if (indexA !== -1 && indexB !== -1) {
-                return indexA - indexB;
-            }
-            if (indexA !== -1) return -1;
-            if (indexB !== -1) return 1;
-            return a.name.localeCompare(b.name);
-        });
+        const fetchAgendaData = async () => {
+            setLoading(true);
+            try {
+                const [appointmentsData, employeesData] = await Promise.all([
+                    getAppointments(),
+                    getUsers().then(users => users.filter(u => u.role === 'Peluquero' && u.isActive))
+                ]);
 
-        setAllEmployees(sortedEmployees);
-        setLoading(false);
-    });
+                setAppointments(appointmentsData);
+
+                const preferredOrder = ['Miguel Alessi', 'Viviana', 'Ines', 'Yami', 'Noe', 'Fede', 'Gonza'];
+                const sortedEmployees = [...employeesData].sort((a, b) => {
+                    const indexA = preferredOrder.indexOf(a.name);
+                    const indexB = preferredOrder.indexOf(b.name);
+                    if (indexA !== -1 && indexB !== -1) {
+                        return indexA - indexB;
+                    }
+                    if (indexA !== -1) return -1;
+                    if (indexB !== -1) return 1;
+                    return a.name.localeCompare(b.name);
+                });
+
+                setAllEmployees(sortedEmployees);
+            } catch (error) {
+                console.error('Failed to fetch agenda data:', error);
+                setAppointments([]);
+                setAllEmployees([]);
+                toast({
+                    variant: 'destructive',
+                    title: 'No se pudo cargar la agenda',
+                    description: 'Revisá la conexión o recargá la página.'
+                });
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchAgendaData();
     
     const timer = setInterval(() => {
         setNow(new Date());
     }, 10000); // Update every 10 seconds
     return () => clearInterval(timer);
-  }, []);
+    }, [toast]);
 
 
   const isHairdresser = currentUser?.role === 'Peluquero';
@@ -302,7 +349,7 @@ export default function AgendaPage() {
       // }
   }, [isHairdresser, currentUser]);
 
-  const getAppointmentsForDay = (day: Date, employeeId?: string) => {
+    const getAppointmentsForDay = (day: Date, employeeId?: string) => {
     let appointmentsToFilter = [...appointments];
     
     if (employeeId) {
@@ -327,9 +374,36 @@ export default function AgendaPage() {
     
     return appointmentsToFilter
       .filter(appt => isSameDay(new Date(appt.date), day))
-      .filter(appt => appt.status !== 'cancelled' && appt.status !== 'no-show')
+            .filter(appt => appt.status !== 'no-show')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
+
+    const getAppointmentColorClasses = (appointment: Appointment, day: Date) => {
+        if (appointment.status === 'cancelled') {
+            return {
+                card: 'bg-red-100 text-red-900 border-red-500',
+                pill: 'bg-red-200 text-red-900'
+            };
+        }
+
+        const customerKey = appointment.customerEmail || appointment.customerName;
+        const clientAppointmentsSameDay = appointments.filter(appt => {
+            const sameClient = (appt.customerEmail || appt.customerName) === customerKey;
+            return sameClient && isSameDay(new Date(appt.date), day);
+        }).length;
+
+        if (clientAppointmentsSameDay >= 2) {
+            return {
+                card: 'bg-yellow-100 text-yellow-900 border-yellow-500',
+                pill: 'bg-yellow-200 text-yellow-900'
+            };
+        }
+
+        return {
+            card: 'bg-blue-100 text-blue-900 border-blue-500',
+            pill: 'bg-blue-200 text-blue-900'
+        };
+    };
 
   const handleNewAppointment = (day: Date, time: string, employeeId: string) => {
       const dateString = day.toISOString().split('T')[0];
@@ -424,12 +498,10 @@ export default function AgendaPage() {
                       </div>
                       <div className="p-1 space-y-1 flex-1 overflow-y-auto">
                           {getAppointmentsForDay(day).map((appt) => {
-                              const employeeId = (appt.assignments && appt.assignments.length > 0) ? appt.assignments[0]?.employeeId : appt.employeeId;
-                              const employeeIndex = allEmployees.findIndex(e => e.id === employeeId);
-                              const color = employeeIndex > -1 ? (employeeColors[employeeIndex % employeeColors.length] || fallbackColor) : fallbackColor;
                               const appointmentDate = new Date(appt.date);
+                                                            const appointmentColorClasses = getAppointmentColorClasses(appt, day);
                               return (
-                                <div key={appt.id} className={cn("p-1 rounded-sm text-xs", color.bg, color.text)} onClick={(e) => {e.stopPropagation(); handleEditAppointment(appt);}}>
+                                                                <div key={appt.id} className={cn("p-1 rounded-sm text-xs border", appointmentColorClasses.card)} onClick={(e) => {e.stopPropagation(); handleEditAppointment(appt);}}>
                                   <p className="font-semibold truncate">{(Array.isArray(appt.serviceNames) ? appt.serviceNames : [appt.serviceNames]).join(', ')}</p>
                                   <p className="truncate">{appt.customerName}</p>
                                   <p className="flex items-center gap-1"><Clock className="w-3 h-3" />{format(appointmentDate, 'p', { locale: es })}</p>
@@ -463,12 +535,11 @@ export default function AgendaPage() {
                       </div>
                        <div className="p-1 space-y-1 overflow-y-auto">
                           {getAppointmentsForDay(day).slice(0,2).map((appt) => {
-                             const employeeId = (appt.assignments && appt.assignments.length > 0) ? appt.assignments[0]?.employeeId : appt.employeeId;
-                             const employeeIndex = allEmployees.findIndex(e => e.id === employeeId);
-                             const color = employeeIndex > -1 ? (employeeColors[employeeIndex % employeeColors.length] || fallbackColor) : fallbackColor;
+                             const appointmentColorClasses = getAppointmentColorClasses(appt, day);
+                             const services = Array.isArray(appt.serviceNames) ? appt.serviceNames : [appt.serviceNames];
                              return (
-                              <div key={appt.id} className={cn("p-1 rounded-sm text-xs truncate", color.bg, color.text)} onClick={(e) => {e.stopPropagation(); handleEditAppointment(appt);}}>
-                                  {format(new Date(appt.date), 'p', { locale: es })} - {appt.customerName}
+                              <div key={appt.id} className={cn("p-1 rounded-sm text-xs truncate border", appointmentColorClasses.card)} onClick={(e) => {e.stopPropagation(); handleEditAppointment(appt);}}>
+                                  {services.join(', ')}
                               </div>
                              )
                           })}
@@ -511,7 +582,7 @@ export default function AgendaPage() {
       <div className="space-y-6">
         <Tabs defaultValue="dia">
           <div className="flex justify-center mb-4">
-              <TabsList>
+              <TabsList className="grid w-full max-w-md grid-cols-3">
                   <TabsTrigger value="dia">Día</TabsTrigger>
                   <TabsTrigger value="semana">Semana</TabsTrigger>
                   <TabsTrigger value="mes">Mes</TabsTrigger>
@@ -526,7 +597,7 @@ export default function AgendaPage() {
                           {(employeeFilter !== 'todos' && !isHairdresser) ? `Mostrando agenda para ${visibleEmployees[0]?.name}.` : 'Mostrando todos los empleados.'}
                         </CardDescription>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex w-full md:w-auto flex-col sm:flex-row gap-2">
                         {canManageAgenda && 
                             <Button asChild>
                                 <Link href={`/admin/appointments/new?date=${date.toISOString().split('T')[0]}`}>
@@ -555,6 +626,7 @@ export default function AgendaPage() {
                             viewEndHour={endHour}
                             viewInterval={viewInterval}
                             getAppointmentsForDay={getAppointmentsForDay}
+                            getAppointmentColorClasses={getAppointmentColorClasses}
                             handleEditAppointment={handleEditAppointment}
                             handleNewAppointment={handleNewAppointment}
                             canManageAgenda={canManageAgenda}
@@ -596,40 +668,42 @@ export default function AgendaPage() {
             <CardDescription>Visualiza y gestiona los turnos. Utiliza los filtros para organizar la vista.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
+                            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                                    <div className="flex items-center gap-2 shrink-0">
                       <Filter className="h-5 w-5 text-muted-foreground" />
                       <Label>Filtrar por:</Label>
                   </div>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant={"outline"}
-                        className={cn("w-full md:w-[280px] justify-start text-left font-normal", !date && "text-muted-foreground")}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date ? format(date, "PPP", { locale: es }) : <span>Selecciona una fecha</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus locale={es} />
-                    </PopoverContent>
-                  </Popover>
-                  
-                    <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
-                        <SelectTrigger className="w-full md:w-[280px]">
-                            <SelectValue placeholder="Filtrar por empleado..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="todos">Todos los empleados</SelectItem>
-                            {allEmployees.map(emp => (
-                                <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                  
+                                    <div className="grid w-full grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button
+                                                    variant={"outline"}
+                                                    className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
+                                                >
+                                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                                    {date ? format(date, "PPP", { locale: es }) : <span>Selecciona una fecha</span>}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0">
+                                                <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus locale={es} />
+                                            </PopoverContent>
+                                        </Popover>
+                    
+                                            <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
+                                                    <SelectTrigger className="w-full">
+                                                            <SelectValue placeholder="Filtrar por empleado..." />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                            <SelectItem value="todos">Todos los empleados</SelectItem>
+                                                            {allEmployees.map(emp => (
+                                                                    <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                                                            ))}
+                                                    </SelectContent>
+                                            </Select>
+                                    </div>
+
                     {canImportExport && (
-                        <div className="flex gap-2">
+                                                <div className="grid w-full md:w-auto grid-cols-1 sm:grid-cols-2 gap-2">
                              <Button variant="outline" onClick={handleImportClick} disabled={isProcessing}>
                                 {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Upload className="mr-2 h-4 w-4" />}
                                 Importar Agenda
@@ -641,12 +715,12 @@ export default function AgendaPage() {
                         </div>
                     )}
               </div>
-              <div className="flex flex-col md:flex-row items-center gap-4 border-t pt-4">
-                <div className="flex items-center gap-2">
+                            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 border-t pt-4">
+                                <div className="flex items-center gap-2 shrink-0">
                     <Clock className="h-5 w-5 text-muted-foreground" />
                     <Label>Vista diaria:</Label>
                 </div>
-                <div className='w-full md:w-auto grid grid-cols-3 gap-2'>
+                                <div className='w-full md:w-auto grid grid-cols-1 sm:grid-cols-3 gap-2'>
                     <Select value={String(startHour)} onValueChange={(v) => setStartHour(Number(v))}>
                     <SelectTrigger className="w-full">
                         <SelectValue />

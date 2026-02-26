@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import type { Appointment } from '@/lib/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar, Clock, User, Scissors, Tag, Pencil, PlusCircle } from 'lucide-react';
+import { Calendar, User, Scissors, Pencil, PlusCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface DayAppointmentsModalProps {
   isOpen: boolean;
@@ -20,6 +21,21 @@ interface DayAppointmentsModalProps {
 
 export function DayAppointmentsModal({ isOpen, onClose, appointments, date, onEditAppointment, onAddAppointment }: DayAppointmentsModalProps) {
   if (!isOpen || !date) return null;
+
+  const getAppointmentColorClasses = (appointment: Appointment) => {
+    if (appointment.status === 'cancelled') {
+      return 'bg-red-100 border-red-500 text-red-900';
+    }
+
+    const customerKey = appointment.customerEmail || appointment.customerName;
+    const clientAppointmentsSameDay = appointments.filter(appt => (appt.customerEmail || appt.customerName) === customerKey).length;
+
+    if (clientAppointmentsSameDay >= 2) {
+      return 'bg-yellow-100 border-yellow-500 text-yellow-900';
+    }
+
+    return 'bg-blue-100 border-blue-500 text-blue-900';
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -38,12 +54,8 @@ export function DayAppointmentsModal({ isOpen, onClose, appointments, date, onEd
             {appointments.length > 0 ? (
               appointments.map((appt, index) => (
                 <div key={appt.id}>
-                  <div className="flex justify-between items-start">
+                  <div className={cn('flex justify-between items-start rounded-md border p-3', getAppointmentColorClasses(appt))}>
                     <div className="space-y-2">
-                      <p className="font-semibold flex items-center gap-2">
-                        <Clock className="h-4 w-4" />
-                        {format(appt.date, 'p', { locale: es })}
-                      </p>
                       <p className="text-sm text-muted-foreground flex items-center gap-2">
                         <User className="h-4 w-4" />
                         {appt.customerName}

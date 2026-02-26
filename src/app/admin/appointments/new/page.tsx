@@ -10,8 +10,8 @@ import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
 import type { Service, Client, Appointment, User, Product, AppointmentAssignment } from '@/lib/types';
-import { updateAppointment, updateAppointmentStatus, deleteAppointment } from '@/lib/actions';
-import { getServices, getUsers, getProducts, getClients, getAppointmentById } from '@/lib/data';
+import { createAppointment, updateAppointment, updateAppointmentStatus, deleteAppointment } from '@/lib/actions';
+import { getServices, getUsers, getProducts, getAppointmentById } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
@@ -53,13 +53,14 @@ export default function NewAppointmentPage() {
     const [isStatusChanging, startStatusTransition] = useTransition();
     const [isLoading, setIsLoading] = useState(true);
 
-    const [clients, setClients] = useState<Client[]>([]);
     const [employees, setEmployees] = useState<User[]>([]);
     const [allServices, setAllServices] = useState<Service[]>([]);
     const [allProducts, setAllProducts] = useState<Product[]>([]);
+    const [selectedExistingClientId, setSelectedExistingClientId] = useState<string | null>(null);
     
     const [isClientModalOpen, setIsClientModalOpen] = useState(false);
     const [serviceSearchOpen, setServiceSearchOpen] = useState<number | null>(null);
+    const [serviceSearchTerm, setServiceSearchTerm] = useState('');
     const [assignmentProductSearchOpen, setAssignmentProductSearchOpen] = useState<string | null>(null);
 
     
@@ -133,6 +134,18 @@ export default function NewAppointmentPage() {
         [assignments]
     );
 
+    const filteredServices = useMemo(() => {
+        const query = serviceSearchTerm.trim().toLowerCase();
+        if (!query) return allServices;
+
+        const exactCodeMatches = allServices.filter(service => (service.code || '').trim().toLowerCase() === query);
+        if (exactCodeMatches.length > 0) {
+            return exactCodeMatches;
+        }
+
+        return allServices.filter(service => (service.name || '').toLowerCase().includes(query));
+    }, [allServices, serviceSearchTerm]);
+
     const { totalDuration, totalPrice } = useMemo(() => {
         const servicesDuration = assignments.reduce((sum, a) => sum + (a.duration || 0), 0);
         const servicesPrice = selectedServicesDetails.reduce((sum, a) => sum + (a.service?.price || 0), 0);
@@ -162,20 +175,22 @@ export default function NewAppointmentPage() {
         startSaveTransition(async () => {
             const finalAssignments = assignments.filter(a => a.serviceId && a.employeeId && a.time && a.duration) as AppointmentAssignment[];
 
-            const appointmentData: Partial<Appointment> = {
+            const appointmentData = {
                 customerName,
                 customerEmail,
                 customerPhone,
                 assignments: finalAssignments,
                 productIds: finalAssignments.flatMap(a => a.productIds || []),
                 date: date.toISOString(),
-                status: currentStatus,
                 notes,
             };
 
             try {
-                const idToSave = appointmentId || `appt_${Date.now()}`;
-                await updateAppointment(idToSave, { ...appointmentData, id: idToSave });
+                if (isEditing && appointmentId) {
+                    await updateAppointment(appointmentId, { ...appointmentData, status: currentStatus });
+                } else {
+                    await createAppointment(appointmentData);
+                }
 
                 toast({ title: isEditing ? 'Turno Actualizado' : 'Turno Creado Exitosamente' });
                 router.push('/admin/agenda');
@@ -215,7 +230,6 @@ export default function NewAppointmentPage() {
     
     const openClientSearch = () => {
         if (!canEdit) return;
-        getClients().then(setClients); // Fetch/re-fetch clients only when modal is opened
         setIsClientModalOpen(true);
     }
 
@@ -223,6 +237,7 @@ export default function NewAppointmentPage() {
         setCustomerName(client.name || '');
         setCustomerEmail(client.email || '');
         setCustomerPhone(client.mobilePhone || '');
+        setSelectedExistingClientId(client.id || null);
         setIsClientModalOpen(false);
     }
 
@@ -293,7 +308,6 @@ export default function NewAppointmentPage() {
          <ClientSearchModal
             isOpen={isClientModalOpen}
             onClose={() => setIsClientModalOpen(false)}
-            clients={clients}
             onSelectClient={handleClientSelect}
          />
          <div className="p-4 md:p-6 space-y-6">
@@ -327,7 +341,15 @@ export default function NewAppointmentPage() {
                                 <>
                                     <div className="space-y-2">
                                         <Label htmlFor="email">Email</Label>
-                                        <Input id="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} disabled={!canEdit || (clients.some(c => c.email === customerEmail && !!c.id))}/>
+                                        <Input
+                                            id="email"
+                                            value={customerEmail}
+                                            onChange={(e) => {
+                                                setCustomerEmail(e.target.value);
+                                                setSelectedExistingClientId(null);
+                                            }}
+                                            disabled={!canEdit || !!selectedExistingClientId}
+                                        />
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="phone">Teléfono</Label>
@@ -359,28 +381,39 @@ export default function NewAppointmentPage() {
                                     {assignments.map((assignment, index) => (
                                         <TableRow key={index}>
                                             <TableCell>
-                                                <Popover open={serviceSearchOpen === index} onOpenChange={(isOpen) => setServiceSearchOpen(isOpen ? index : null)}>
+                                                <Popover
+                                                    open={serviceSearchOpen === index}
+                                                    onOpenChange={(isOpen) => {
+                                                        setServiceSearchOpen(isOpen ? index : null);
+                                                        if (!isOpen) setServiceSearchTerm('');
+                                                    }}
+                                                >
                                                     <PopoverTrigger asChild disabled={!canEdit}>
                                                         <Button variant="outline" className="w-full justify-start font-normal">
                                                             {allServices.find(s => s.id === assignment.serviceId)?.name || "Seleccionar..."}
                                                         </Button>
                                                     </PopoverTrigger>
                                                     <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                                        <Command>
-                                                            <CommandInput placeholder="Buscar servicio..." />
+                                                        <Command shouldFilter={false}>
+                                                            <CommandInput
+                                                                placeholder="Buscar servicio por nombre o código exacto..."
+                                                                value={serviceSearchTerm}
+                                                                onValueChange={setServiceSearchTerm}
+                                                            />
                                                             <CommandList>
                                                                 <CommandEmpty>No se encontraron servicios.</CommandEmpty>
                                                                 <CommandGroup>
-                                                                    {allServices.map(s => (
+                                                                    {filteredServices.map(s => (
                                                                         <CommandItem
                                                                             key={s.id}
-                                                                            value={`${s.code} ${s.name}`}
+                                                                            value={s.id}
                                                                             onSelect={() => {
                                                                                 updateAssignment(index, 'serviceId', s.id);
                                                                                 setServiceSearchOpen(null);
+                                                                                setServiceSearchTerm('');
                                                                             }}
                                                                         >
-                                                                            {s.name}
+                                                                            {s.code} - {s.name}
                                                                         </CommandItem>
                                                                     ))}
                                                                 </CommandGroup>

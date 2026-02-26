@@ -228,14 +228,62 @@ export async function batchCreateAppointmentsData(
 ): Promise<{ createdCount: number; createdAppointments: Appointment[] }> {
   await connectToDatabase();
 
-  // Create clients first
-  for (const appt of appointments) {
-    if (appt.customerName) {
-      await createClient({ name: appt.customerName, email: appt.customerEmail });
+  const normalizedText = (value?: string) => (value || '').trim().toLowerCase();
+  const normalizePhone = (value?: string) => (value || '').replace(/\D/g, '');
+  const slugify = (value?: string) => {
+    const normalized = (value || 'cliente')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '.')
+      .replace(/^\.+|\.+$/g, '');
+    return normalized || 'cliente';
+  };
+
+  const fallbackEmailByClientKey = new Map<string, string>();
+
+  const appointmentsWithNormalizedClient = appointments.map((appt) => {
+    const customerName = (appt.customerName || '').trim();
+    const customerPhone = (appt.customerPhone || '').trim();
+    const normalizedEmail = normalizedText(appt.customerEmail);
+
+    const clientKey = normalizedEmail || `${normalizedText(customerName)}|${normalizePhone(customerPhone)}`;
+
+    let finalEmail = normalizedEmail;
+    if (!finalEmail && customerName) {
+      const existingFallback = fallbackEmailByClientKey.get(clientKey);
+      if (existingFallback) {
+        finalEmail = existingFallback;
+      } else {
+        const generatedFallback = `${slugify(customerName)}.${normalizePhone(customerPhone) || 'sintelefono'}@placeholder.com`;
+        fallbackEmailByClientKey.set(clientKey, generatedFallback);
+        finalEmail = generatedFallback;
+      }
     }
+
+    return {
+      ...appt,
+      customerName,
+      customerPhone,
+      customerEmail: finalEmail,
+    };
+  });
+
+  const processedClientKeys = new Set<string>();
+  for (const appt of appointmentsWithNormalizedClient) {
+    if (!appt.customerName) continue;
+    const clientKey = normalizedText(appt.customerEmail) || `${normalizedText(appt.customerName)}|${normalizePhone(appt.customerPhone)}`;
+    if (processedClientKeys.has(clientKey)) continue;
+
+    await createClient({
+      name: appt.customerName,
+      email: appt.customerEmail,
+      mobilePhone: appt.customerPhone,
+    });
+    processedClientKeys.add(clientKey);
   }
 
-  const newAppointments = appointments.map(appt => ({
+  const newAppointments = appointmentsWithNormalizedClient.map(appt => ({
     ...appt,
     status: 'confirmed' as const,
   }));
@@ -266,6 +314,31 @@ export async function updateClientAppointmentsStatus(appointmentIds: string[], s
 export async function getClients(): Promise<Client[]> {
   await connectToDatabase();
   const clients = await ClientModel.find({}).lean();
+  return clients.map(c => ({ ...c, id: c._id.toString(), _id: undefined } as unknown as Client));
+}
+
+export async function searchClients(query: string, limit = 40): Promise<Client[]> {
+  await connectToDatabase();
+
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
+
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+  const escaped = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(escaped, 'i');
+
+  const clients = await ClientModel.find({
+    $or: [
+      { name: regex },
+      { email: regex },
+      { code: regex },
+      { mobilePhone: regex },
+    ],
+  })
+    .sort({ updatedAt: -1, name: 1 })
+    .limit(safeLimit)
+    .lean();
+
   return clients.map(c => ({ ...c, id: c._id.toString(), _id: undefined } as unknown as Client));
 }
 
