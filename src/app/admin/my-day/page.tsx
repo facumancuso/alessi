@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Card,
   CardContent,
@@ -26,20 +26,26 @@ import { ClientHistoryModal } from '@/components/client-history-modal';
 import { useCurrentUser } from '../user-context';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { useToast } from '@/hooks/use-toast';
 
 export default function MyDayPage() {
   const { currentUser } = useCurrentUser();
+  const { toast } = useToast();
   const [dailyAppointments, setDailyAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [historyAppointments, setHistoryAppointments] = useState<Appointment[]>([]);
   const [historyClient, setHistoryClient] = useState<Client | null>(null);
+  const previousStatusesRef = useRef<Map<string, Appointment['status']>>(new Map());
 
   useEffect(() => {
-    const fetchAppointments = async () => {
+    const fetchAppointments = async (showLoader = false) => {
       if (!currentUser) return;
 
-      setLoading(true);
+      if (showLoader) {
+        setLoading(true);
+      }
+
       try {
         // We get ALL appointments from the data source
         const allAppointments = await getAppointments();
@@ -51,20 +57,51 @@ export default function MyDayPage() {
             isToday(new Date(appt.date))
           )
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        // Notify employee when a known appointment transitions to waiting
+        const previousStatuses = previousStatusesRef.current;
+        todayAppointments.forEach(appt => {
+          const previousStatus = previousStatuses.get(appt.id);
+          if (previousStatus && previousStatus !== 'waiting' && appt.status === 'waiting') {
+            toast({
+              title: 'Cliente en espera',
+              description: `${appt.customerName} llegó y está esperando atención.`,
+            });
+
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification('Cliente en espera', {
+                body: `${appt.customerName} está en espera (${format(new Date(appt.date), 'p', { locale: es })}).`,
+              });
+            }
+          }
+        });
+
+        previousStatusesRef.current = new Map(todayAppointments.map(appt => [appt.id, appt.status]));
         
         setDailyAppointments(todayAppointments);
       } catch (error) {
         console.error("Failed to fetch appointments:", error);
         setDailyAppointments([]);
       } finally {
-        setLoading(false);
+        if (showLoader) {
+          setLoading(false);
+        }
       }
     };
 
     if (currentUser) {
-      fetchAppointments();
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => undefined);
+      }
+
+      fetchAppointments(true);
+      const interval = setInterval(() => {
+        fetchAppointments(false);
+      }, 15000);
+
+      return () => clearInterval(interval);
     }
-  }, [currentUser]);
+  }, [currentUser, toast]);
 
   const handleShowHistory = async (email: string) => {
     const [clientAppointments, clientDetails] = await Promise.all([
