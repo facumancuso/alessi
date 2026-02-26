@@ -9,7 +9,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { getClients, getProducts, getServices, getUsers } from '@/lib/data';
+import { getProducts, getServices, getUsers } from '@/lib/data';
 import { batchCreateAppointments } from '@/lib/actions';
 import type { Client, Product, Service, User, AppointmentAssignment } from '@/lib/types';
 import { ArrowLeft, CalendarIcon, Loader2, PlusCircle, Save, Trash2, X, Search, DollarSign } from 'lucide-react';
@@ -50,7 +50,6 @@ export default function FastEntryPage() {
     const [date, setDate] = useState<Date | undefined>(new Date());
     const [rows, setRows] = useState<AppointmentRow[]>([{ rowId: rowIdCounter++, assignments: [] }]);
 
-    const [allClients, setAllClients] = useState<Client[]>([]);
     const [allEmployees, setAllEmployees] = useState<User[]>([]);
     const [allServices, setAllServices] = useState<Service[]>([]);
     const [allProducts, setAllProducts] = useState<Product[]>([]);
@@ -111,7 +110,6 @@ export default function FastEntryPage() {
     }
     
     const openClientSearch = (rowId: number) => {
-        getClients().then(setAllClients); // Fetch/re-fetch clients only when modal is opened
         setCurrentRowIdForClient(rowId);
         setIsClientModalOpen(true);
     }
@@ -254,7 +252,6 @@ export default function FastEntryPage() {
             <ClientSearchModal 
                 isOpen={isClientModalOpen}
                 onClose={() => setIsClientModalOpen(false)}
-                clients={allClients}
                 onSelectClient={handleClientSelect}
             />
             <div className="space-y-6">
