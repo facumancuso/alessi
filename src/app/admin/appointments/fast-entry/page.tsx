@@ -168,8 +168,16 @@ export default function FastEntryPage() {
             });
 
             try {
-                const result = await batchCreateAppointments(appointmentsToCreate as any);
-                toast({ title: 'Turnos Guardados', description: `${result.createdCount} turnos fueron creados exitosamente.` });
+                const BATCH_SIZE = 10;
+                let totalCreated = 0;
+
+                for (let i = 0; i < appointmentsToCreate.length; i += BATCH_SIZE) {
+                    const chunk = appointmentsToCreate.slice(i, i + BATCH_SIZE);
+                    const result = await batchCreateAppointments(chunk as any);
+                    totalCreated += result.createdCount;
+                }
+
+                toast({ title: 'Turnos Guardados', description: `${totalCreated} turnos fueron creados exitosamente.` });
                 router.push('/admin/agenda');
             } catch (error) {
                 console.error(error);
