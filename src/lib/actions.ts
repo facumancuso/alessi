@@ -254,13 +254,25 @@ export async function updateAssignmentStatus(
     status: 'pending' | 'in_progress' | 'completed'
 ): Promise<void> {
     await connectToDatabase();
-    await AppointmentModel.findByIdAndUpdate(
+    const updated = await AppointmentModel.findByIdAndUpdate(
         appointmentId,
         { $set: { 'assignments.$[elem].status': status } },
         { arrayFilters: [{ 'elem.employeeId': employeeId }], new: true }
     );
+
+    // Si todas las assignments están completadas, pasar a facturado
+    if (status === 'completed' && updated) {
+        const allDone = (updated.assignments || []).every(
+            (a: { status?: string }) => a.status === 'completed'
+        );
+        if (allDone) {
+            await AppointmentModel.findByIdAndUpdate(appointmentId, { $set: { status: 'facturado' } });
+        }
+    }
+
     revalidatePath('/admin/my-day');
     revalidatePath('/admin/agenda');
+    revalidatePath('/admin/billing');
 }
 
 export async function billAllClientAppointments(appointmentIds: string[]) {

@@ -225,9 +225,10 @@ export default function MyDayPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {(Array.isArray(appt.serviceNames) ? appt.serviceNames : [appt.serviceNames]).map(name => (
-                              <Badge key={name} variant="secondary">{name}</Badge>
-                            ))}
+                            {myAssignments.map(({ idx }) => {
+                              const name = appt.serviceNames?.[idx];
+                              return name ? <Badge key={idx} variant="secondary">{name}</Badge> : null;
+                            })}
                           </div>
                         </TableCell>
                         <TableCell>

@@ -107,7 +107,12 @@ export default function NewAppointmentPage() {
                     const prefillTime = searchParams.get('time');
                     const prefillEmployeeId = searchParams.get('employeeId');
 
-                    setDate(prefillDate ? new Date(prefillDate) : new Date());
+                    if (prefillDate) {
+                        const [y, m, d] = prefillDate.split('-').map(Number);
+                        setDate(new Date(y, m - 1, d));
+                    } else {
+                        setDate(new Date());
+                    }
                     
                     const newAssignment: Partial<AppointmentAssignment> = {};
                     if(prefillEmployeeId) newAssignment.employeeId = prefillEmployeeId;

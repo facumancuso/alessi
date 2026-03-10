@@ -373,13 +373,15 @@ export default function AgendaPage() {
             };
         }
 
+        const isMultiEmployee = (appointment.assignments || []).length > 1;
+
         const customerKey = appointment.customerEmail || appointment.customerName;
         const clientAppointmentsSameDay = appointments.filter(appt => {
             const sameClient = (appt.customerEmail || appt.customerName) === customerKey;
             return sameClient && isSameDay(new Date(appt.date), day);
         }).length;
 
-        if (clientAppointmentsSameDay >= 2) {
+        if (isMultiEmployee || clientAppointmentsSameDay >= 2) {
             return {
                 card: 'bg-yellow-100 text-yellow-900 border-yellow-500',
                 pill: 'bg-yellow-200 text-yellow-900'

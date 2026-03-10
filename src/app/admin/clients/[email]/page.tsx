@@ -407,25 +407,13 @@ export default function ClientDetailPage() {
                     </CardContent>
                 </Card>
                 
-                {(canMarkWaiting || canProcessAppointment) && upcomingAppointment && (
+                {canMarkWaiting && upcomingAppointment && (
                     <Card>
                       <CardHeader><CardTitle>Acciones del Turno</CardTitle></CardHeader>
                       <CardContent className="flex w-full gap-2 pt-2">
-                        {canMarkWaiting && (
-                          <Button className="flex-1" variant="outline" onClick={() => openConfirmationAlert('arrive')} disabled={isUpdating || upcomingAppointment.status !== 'confirmed'}>
-                              {isUpdating ? <Loader2 className="animate-spin"/> : <AlertCircle className="mr-2"/>} En espera
-                          </Button>
-                        )}
-                        {canProcessAppointment && (
-                          <Button className="flex-1" variant="outline" onClick={() => openConfirmationAlert('start')} disabled={isUpdating || upcomingAppointment.status !== 'waiting'}>
-                              {isUpdating ? <Loader2 className="animate-spin"/> : <Play className="mr-2"/>} Iniciar
-                          </Button>
-                        )}
-                        {canProcessAppointment && (
-                          <Button className="flex-1" onClick={() => openConfirmationAlert('finish')} disabled={isUpdating || upcomingAppointment.status !== 'in_progress'}>
-                              {isUpdating ? <Loader2 className="animate-spin"/> : <Check className="mr-2"/>} Finalizar
-                          </Button>
-                        )}
+                        <Button className="flex-1" variant="outline" onClick={() => openConfirmationAlert('arrive')} disabled={isUpdating || upcomingAppointment.status !== 'confirmed'}>
+                            {isUpdating ? <Loader2 className="animate-spin"/> : <AlertCircle className="mr-2"/>} En espera
+                        </Button>
                       </CardContent>
                     </Card>
                 )}
