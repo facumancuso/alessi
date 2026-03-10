@@ -620,7 +620,7 @@ export default function AgendaPage() {
     setHistoryAppointments(clientAppointments);
     setHistoryClient({
       ...clientDetails,
-            mobilePhone: phone || clientDetails?.mobilePhone,
+            mobilePhone: clientDetails?.mobilePhone || phone,
     } as Client);
     setIsHistoryModalOpen(true);
   }
