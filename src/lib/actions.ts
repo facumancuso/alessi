@@ -285,6 +285,25 @@ export async function revertAllClientAppointments(appointmentIds: string[]) {
     revalidatePath('/admin/billing');
 }
 
+export async function moveAssignment(
+    appointmentId: string,
+    assignmentIdx: number,
+    newTime: string,
+    newEmployeeId: string
+): Promise<void> {
+    await connectToDatabase();
+    const appt = await AppointmentModel.findById(appointmentId);
+    if (!appt || !appt.assignments?.[assignmentIdx]) {
+        throw new Error('Turno no encontrado');
+    }
+    appt.assignments[assignmentIdx].time = newTime;
+    appt.assignments[assignmentIdx].employeeId = newEmployeeId;
+    await appt.save();
+    revalidatePath('/admin/agenda');
+    revalidatePath('/admin/my-day');
+    revalidatePath('/admin');
+}
+
 
 export async function createBackup() {
     const [

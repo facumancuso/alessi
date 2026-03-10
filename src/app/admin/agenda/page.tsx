@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAppointments, getUsers, getAppointmentsByClient, getClientByEmail } from '@/lib/data';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, setHours, setMinutes, addMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar as CalendarIcon, Filter, Clock, PlusCircle, Loader2, Upload, Download, Edit } from 'lucide-react';
+import { Calendar as CalendarIcon, Filter, Clock, PlusCircle, Loader2, Upload, Download, Edit, User, Scissors } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { Appointment, AppointmentAssignment, Client, User } from '@/lib/types';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -20,7 +21,8 @@ import { ClientHistoryModal } from '@/components/client-history-modal';
 import { useCurrentUser } from '../user-context';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { importData, exportAppointments } from '@/lib/actions';
+import { importData, exportAppointments, moveAssignment } from '@/lib/actions';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { sortEmployeesByAgendaOrder } from '@/lib/employee-order';
@@ -70,6 +72,77 @@ const statusPillStyles: Record<Appointment['status'], string> = {
 
 const hourOptions = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 
+function computeBlockLayouts(blocks: { id: string; top: number; height: number }[]): Map<string, { slot: number; totalSlots: number }> {
+    if (blocks.length === 0) return new Map();
+
+    const sorted = [...blocks].sort((a, b) => a.top - b.top);
+
+    // Assign each block to a lane (column) greedily
+    const laneEnds: number[] = [];
+    const blockLanes = new Map<string, number>();
+
+    for (const block of sorted) {
+        let lane = laneEnds.findIndex(end => end <= block.top);
+        if (lane === -1) lane = laneEnds.length;
+        laneEnds[lane] = block.top + block.height;
+        blockLanes.set(block.id, lane);
+    }
+
+    // Find transitively overlapping groups (connected components)
+    const blockById = new Map(blocks.map(b => [b.id, b]));
+    const visited = new Set<string>();
+    const groups: string[][] = [];
+
+    for (const block of sorted) {
+        if (visited.has(block.id)) continue;
+        const group: string[] = [];
+        const queue = [block.id];
+        visited.add(block.id);
+        while (queue.length > 0) {
+            const id = queue.shift()!;
+            group.push(id);
+            const current = blockById.get(id)!;
+            for (const other of sorted) {
+                if (!visited.has(other.id)) {
+                    const overlaps = current.top < other.top + other.height && other.top < current.top + current.height;
+                    if (overlaps) {
+                        visited.add(other.id);
+                        queue.push(other.id);
+                    }
+                }
+            }
+        }
+        groups.push(group);
+    }
+
+    const result = new Map<string, { slot: number; totalSlots: number }>();
+    for (const group of groups) {
+        const lanesUsed = new Set(group.map(id => blockLanes.get(id)!));
+        const totalSlots = lanesUsed.size;
+        for (const id of group) {
+            result.set(id, { slot: blockLanes.get(id)!, totalSlots });
+        }
+    }
+    return result;
+}
+
+interface DragState {
+    apptId: string;
+    assignmentIdx: number;
+    employeeId: string;
+    time: string;
+    customerName: string;
+    serviceName: string;
+    duration: number;
+}
+
+interface PendingMove {
+    drag: DragState;
+    newTime: string;
+    newEmployeeId: string;
+    newEmployeeName: string;
+}
+
 function DayView({
   day,
   viewStartHour,
@@ -83,7 +156,8 @@ function DayView({
   now,
   employeeFilter,
   timeSlots,
-  allEmployees
+  allEmployees,
+  onMoveAssignment,
 }: {
   day: Date;
   viewStartHour: number;
@@ -98,8 +172,13 @@ function DayView({
   employeeFilter: string;
   timeSlots: string[];
   allEmployees: User[];
+  onMoveAssignment: (apptId: string, idx: number, newTime: string, newEmployeeId: string) => Promise<void>;
 }) {
     const timeIndicatorRef = useRef<HTMLDivElement>(null);
+    const [dragState, setDragState] = useState<DragState | null>(null);
+    const [hoverSlot, setHoverSlot] = useState<{ time: string; employeeId: string } | null>(null);
+    const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
+    const [isMoving, setIsMoving] = useState(false);
     const minuteHeight = 1.3;
     const hourHeight = 60 * minuteHeight;
     const totalHours = viewEndHour - viewStartHour;
@@ -140,7 +219,43 @@ function DayView({
     }
 
 
+    const handleConfirmMove = async () => {
+        if (!pendingMove) return;
+        setIsMoving(true);
+        try {
+            await onMoveAssignment(pendingMove.drag.apptId, pendingMove.drag.assignmentIdx, pendingMove.newTime, pendingMove.newEmployeeId);
+        } finally {
+            setIsMoving(false);
+            setPendingMove(null);
+            setDragState(null);
+        }
+    };
+
     return (
+        <>
+        <AlertDialog open={!!pendingMove} onOpenChange={(open) => !open && setPendingMove(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>¿Mover turno?</AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-1">
+                        <span className="block font-medium text-foreground">{pendingMove?.drag.customerName} — {pendingMove?.drag.serviceName}</span>
+                        <span className="block">
+                            De <span className="font-medium text-foreground">{pendingMove?.drag.time}</span> → <span className="font-medium text-foreground">{pendingMove?.newTime}</span>
+                            {pendingMove?.drag.employeeId !== pendingMove?.newEmployeeId && (
+                                <> · empleado: <span className="font-medium text-foreground">{pendingMove?.newEmployeeName}</span></>
+                            )}
+                        </span>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isMoving}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction disabled={isMoving} onClick={handleConfirmMove}>
+                        {isMoving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                        Confirmar
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
         <div className="flex flex-col">
             <div className="flex sticky top-0 bg-card/95 backdrop-blur z-30 border-b">
                  <div className="w-16 md:w-20 flex-shrink-0 border-r pt-4"></div>
@@ -190,57 +305,128 @@ function DayView({
                                                 ? 'border-border/50 border-dashed'
                                                 : 'border-border/30 border-dotted';
 
+                                        const isHover = !!dragState && hoverSlot?.time === time && hoverSlot?.employeeId === employee.id;
                                         return (
-                                        <div 
-                                            key={time} 
-                                            className={cn("absolute w-full border-t", canManageAgenda && "cursor-pointer hover:bg-secondary/60 transition-colors", rowClass)} 
+                                        <div
+                                            key={time}
+                                            className={cn(
+                                                "absolute w-full border-t transition-colors",
+                                                canManageAgenda && !dragState && "cursor-pointer hover:bg-secondary/60",
+                                                isHover && "bg-primary/15",
+                                                rowClass
+                                            )}
                                             style={{ top: index * rowHeight, height: rowHeight }}
-                                            onClick={() => canManageAgenda && handleNewAppointment(day, time, employee.id)}
+                                            onClick={() => canManageAgenda && !dragState && handleNewAppointment(day, time, employee.id)}
+                                            onDragOver={dragState ? (e) => { e.preventDefault(); setHoverSlot({ time, employeeId: employee.id }); } : undefined}
+                                            onDragLeave={dragState ? () => setHoverSlot(null) : undefined}
+                                            onDrop={dragState ? (e) => {
+                                                e.preventDefault();
+                                                setHoverSlot(null);
+                                                const empName = allEmployees.find(e2 => e2.id === employee.id)?.name ?? employee.id;
+                                                setPendingMove({ drag: dragState, newTime: time, newEmployeeId: employee.id, newEmployeeName: empName });
+                                            } : undefined}
                                         ></div>
                                     )})}
-                                    
-                                    {dailyAppointments.flatMap(appt => {
-                                        if (!appt.assignments) return [];
-                                        return appt.assignments
-                                            .map((assign, originalIdx) => ({ assign, originalIdx }))
-                                            .filter(({ assign }) => assign.employeeId === employee.id && assign.time && assign.duration)
-                                            .map(({ assign: assignment, originalIdx }) => {
-                                                const { color } = getEmployeeForAssignment(assignment);
-                                                const top = getEventTop(assignment.time);
-                                                const height = getEventHeight(assignment.duration);
 
-                                                const currentStatus = appt.status;
+                                    {(() => {
+                                        // Collect all blocks for this employee to compute overlap layout
+                                        const allBlocks = dailyAppointments.flatMap(appt => {
+                                            if (!appt.assignments) return [];
+                                            return appt.assignments
+                                                .map((assign, originalIdx) => ({ assign, originalIdx, appt }))
+                                                .filter(({ assign }) => assign.employeeId === employee.id && assign.time && assign.duration)
+                                                .map(({ assign, originalIdx, appt }) => ({
+                                                    id: `${appt.id}-${originalIdx}`,
+                                                    top: getEventTop(assign.time),
+                                                    height: getEventHeight(assign.duration),
+                                                }));
+                                        });
+                                        const layouts = computeBlockLayouts(allBlocks);
 
-                                                const serviceName = appt.serviceNames?.[originalIdx] || 'Servicio';
-                                                const appointmentColorClasses = getAppointmentColorClasses(appt, day);
-                                                const visualHeight = Math.max(height, 44);
+                                        return dailyAppointments.flatMap(appt => {
+                                            if (!appt.assignments) return [];
+                                            return appt.assignments
+                                                .map((assign, originalIdx) => ({ assign, originalIdx }))
+                                                .filter(({ assign }) => assign.employeeId === employee.id && assign.time && assign.duration)
+                                                .map(({ assign: assignment, originalIdx }) => {
+                                                    const top = getEventTop(assignment.time);
+                                                    const height = getEventHeight(assignment.duration);
+                                                    const currentStatus = appt.status;
+                                                    const serviceName = appt.serviceNames?.[originalIdx] || 'Servicio';
+                                                    const appointmentColorClasses = getAppointmentColorClasses(appt, day);
+                                                    const visualHeight = Math.max(height, 44);
+                                                    const blockId = `${appt.id}-${originalIdx}`;
+                                                    const layout = layouts.get(blockId) ?? { slot: 0, totalSlots: 1 };
+                                                    const GAP = 2;
+                                                    const colWidth = `calc(${100 / layout.totalSlots}% - ${GAP * 2}px)`;
+                                                    const colLeft = `calc(${(layout.slot / layout.totalSlots) * 100}% + ${GAP}px)`;
 
-                                                return (
-                                                    <div 
-                                                        key={`${appt.id}-${originalIdx}`}
-                                                        className={cn(
-                                                            "absolute left-2 right-2 rounded-xl cursor-pointer z-10 overflow-hidden border-l-4 border shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20",
-                                                            appointmentColorClasses.card
-                                                        )}
-                                                        style={{ top, height: visualHeight }}
-                                                        onClick={() => handleEditAppointment(appt)}
-                                                    >
-                                                        <div className="px-2 py-1.5 md:px-2.5 md:py-2 space-y-1">
-                                                            <div className="flex items-start justify-between gap-2">
-                                                                <p className="font-semibold text-xs md:text-sm truncate">{appt.customerName}</p>
-                                                                <span className={cn(
-                                                                    "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                                                                    appointmentColorClasses.pill
-                                                                )}>
-                                                                    {statusLabels[currentStatus]}
-                                                                </span>
-                                                            </div>
-                                                            <p className="text-[11px] md:text-xs truncate">{serviceName}</p>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })
-                                    })}
+                                                    return (
+                                                        <TooltipProvider key={blockId} delayDuration={300}>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <div
+                                                                        className={cn(
+                                                                            "absolute rounded-xl cursor-pointer z-10 overflow-hidden border-l-4 border shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20",
+                                                                            appointmentColorClasses.card,
+                                                                            canManageAgenda && "cursor-grab active:cursor-grabbing"
+                                                                        )}
+                                                                        style={{ top, height: visualHeight, left: colLeft, width: colWidth }}
+                                                                        draggable={canManageAgenda}
+                                                                        onDragStart={canManageAgenda ? (e) => {
+                                                                            e.stopPropagation();
+                                                                            setDragState({
+                                                                                apptId: appt.id!,
+                                                                                assignmentIdx: originalIdx,
+                                                                                employeeId: assignment.employeeId,
+                                                                                time: assignment.time,
+                                                                                customerName: appt.customerName,
+                                                                                serviceName,
+                                                                                duration: assignment.duration,
+                                                                            });
+                                                                        } : undefined}
+                                                                        onDragEnd={() => { setDragState(null); setHoverSlot(null); }}
+                                                                        onClick={() => handleEditAppointment(appt)}
+                                                                    >
+                                                                        <div className="px-2 py-1.5 md:px-2.5 md:py-2 space-y-1">
+                                                                            <div className="flex items-start justify-between gap-2">
+                                                                                <p className="font-semibold text-xs md:text-sm truncate">{appt.customerName}</p>
+                                                                                <span className={cn(
+                                                                                    "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                                                                                    appointmentColorClasses.pill
+                                                                                )}>
+                                                                                    {statusLabels[currentStatus]}
+                                                                                </span>
+                                                                            </div>
+                                                                            <p className="text-[11px] md:text-xs truncate">{serviceName}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent side="right" className="max-w-[220px] p-0 overflow-hidden">
+                                                                    <div className="px-3 py-2 space-y-1.5">
+                                                                        <div className="flex items-center gap-1.5 font-semibold text-sm">
+                                                                            <User className="h-3.5 w-3.5 shrink-0" />
+                                                                            {appt.customerName}
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                                            <Clock className="h-3 w-3 shrink-0" />
+                                                                            {assignment.time} · {assignment.duration} min
+                                                                        </div>
+                                                                        <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                                                            <Scissors className="h-3 w-3 shrink-0 mt-0.5" />
+                                                                            <span>{serviceName}</span>
+                                                                        </div>
+                                                                        {appt.notes && (
+                                                                            <p className="text-xs italic text-muted-foreground border-t pt-1 mt-1">{appt.notes}</p>
+                                                                        )}
+                                                                    </div>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        </TooltipProvider>
+                                                    );
+                                                });
+                                        });
+                                    })()}
                                 </div>
                             )
                         })}
@@ -249,6 +435,7 @@ function DayView({
                 <ScrollBar orientation="horizontal" />
             </ScrollArea>
         </div>
+        </>
     );
 };
 
@@ -402,6 +589,14 @@ export default function AgendaPage() {
 
   const handleEditAppointment = (appointment: Appointment) => {
       router.push(`/admin/appointments/new?id=${appointment.id}`);
+  };
+
+  const handleMoveAssignment = async (apptId: string, idx: number, newTime: string, newEmployeeId: string) => {
+      await moveAssignment(apptId, idx, newTime, newEmployeeId);
+      // Refrescar appointments localmente
+      const updated = await getAppointments();
+      setAppointments(updated);
+      toast({ title: 'Turno movido', description: `El turno fue actualizado correctamente.` });
   };
   
   const handleOpenDayModal = (day: Date) => {
@@ -624,6 +819,7 @@ export default function AgendaPage() {
                             employeeFilter={employeeFilter}
                             timeSlots={timeSlots}
                             allEmployees={allEmployees}
+                            onMoveAssignment={handleMoveAssignment}
                         />
                     )}
                   </CardContent>
