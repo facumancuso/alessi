@@ -205,7 +205,8 @@ export default function NewAppointmentPage() {
                 if (isEditing && appointmentId) {
                     await updateAppointment(appointmentId, { ...appointmentData, status: currentStatus });
                 } else {
-                    await createAppointment(appointmentData);
+                    const initialStatus = currentUser?.role === 'Peluquero' ? 'waiting' : 'confirmed';
+                    await createAppointment({ ...appointmentData, status: initialStatus });
                 }
 
                 toast({ title: isEditing ? 'Turno Actualizado' : 'Turno Creado Exitosamente' });

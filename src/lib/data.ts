@@ -180,12 +180,12 @@ export async function getAppointmentById(id: string): Promise<Appointment | unde
   } as unknown as Appointment;
 }
 
-export async function createAppointment(data: Partial<Omit<Appointment, 'id' | 'status'>>): Promise<Appointment> {
+export async function createAppointment(data: Partial<Omit<Appointment, 'id'>> & { status?: Appointment['status'] }): Promise<Appointment> {
   await connectToDatabase();
 
   const newAppointmentData = {
     ...data,
-    status: 'confirmed' as const,
+    status: data.status ?? ('confirmed' as const),
   };
 
   const newAppointment = await AppointmentModel.create(newAppointmentData);

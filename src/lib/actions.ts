@@ -203,7 +203,7 @@ export async function updateAppointment(id: string, data: Partial<Appointment>):
     }
 }
 
-export async function createAppointment(data: Partial<Omit<Appointment, 'id' | 'status'>>): Promise<Appointment> {
+export async function createAppointment(data: Partial<Omit<Appointment, 'id'>> & { status?: Appointment['status'] }): Promise<Appointment> {
     try {
         const createdAppointment = await createAppointmentData(data);
 
