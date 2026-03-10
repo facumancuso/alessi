@@ -432,8 +432,12 @@ export async function batchCreateClients(clients: Partial<Client>[]): Promise<{ 
 
 export async function updateClient(id: string, clientUpdate: Partial<Client>): Promise<Client | undefined> {
   await connectToDatabase();
+  const existing = await ClientModel.findById(id).lean();
   const updated = await ClientModel.findByIdAndUpdate(id, clientUpdate, { new: true }).lean();
   if (!updated) return undefined;
+  if (clientUpdate.mobilePhone !== undefined && existing?.email) {
+    await AppointmentModel.updateMany({ customerEmail: existing.email }, { customerPhone: clientUpdate.mobilePhone });
+  }
   return { ...updated, id: updated._id.toString(), _id: undefined } as unknown as Client;
 }
 

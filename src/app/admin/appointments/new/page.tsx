@@ -454,7 +454,7 @@ export default function NewAppointmentPage() {
                                                 </Select>
                                             </TableCell>
                                             <TableCell>
-                                                <Input type="time" value={assignment.time || ''} onChange={(e) => updateAssignment(index, 'time', e.target.value)} disabled={index === 0 ? !isReceptionOrAdmin : !canEdit}/>
+                                                <Input type="time" value={assignment.time || ''} onChange={(e) => updateAssignment(index, 'time', e.target.value)} disabled={index === 0 && isEditing ? !isReceptionOrAdmin : !canEdit}/>
                                             </TableCell>
                                              <TableCell>
                                                 <Input type="number" value={assignment.duration || 0} onChange={(e) => updateAssignment(index, 'duration', parseInt(e.target.value, 10))} disabled={!canEdit}/>
