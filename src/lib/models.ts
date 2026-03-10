@@ -7,6 +7,7 @@ const serviceSchema = new Schema<Service>({
   name: { type: String, required: true },
   duration: { type: Number, required: true },
   price: { type: Number, required: true },
+  cashPrice: { type: Number },
 }, { timestamps: true });
 
 export const ServiceModel = (models.Service as Model<Service>) || mongoose.model<Service>('Service', serviceSchema);
@@ -16,6 +17,7 @@ const productSchema = new Schema<Product>({
   code: { type: String, required: true },
   name: { type: String, required: true },
   price: { type: Number, required: true },
+  cashPrice: { type: Number },
 }, { timestamps: true });
 
 export const ProductModel = (models.Product as Model<Product>) || mongoose.model<Product>('Product', productSchema);
@@ -67,6 +69,7 @@ const appointmentAssignmentSchema = new Schema<AppointmentAssignment>({
   time: { type: String, required: true },
   duration: { type: Number, required: true },
   productIds: [{ type: String }],
+  status: { type: String, default: 'pending' },
 }, { _id: false });
 
 const appointmentSchema = new Schema<Appointment>({

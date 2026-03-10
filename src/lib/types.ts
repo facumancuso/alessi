@@ -6,6 +6,7 @@ export interface Service {
     name: string;
     duration: number;
     price: number;
+    cashPrice?: number;
 }
 
 export interface Product {
@@ -13,6 +14,7 @@ export interface Product {
     code: string;
     name: string;
     price: number;
+    cashPrice?: number;
 }
 
 export interface AppointmentAssignment {
@@ -21,6 +23,7 @@ export interface AppointmentAssignment {
     time: string;
     duration: number;
     productIds?: string[];
+    status?: 'pending' | 'in_progress' | 'completed';
 }
 
 export interface Appointment {

@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useTransition } from 'react';
 import {
   Card,
   CardContent,
@@ -27,6 +27,7 @@ import { useCurrentUser } from '../user-context';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
+import { updateAssignmentStatus } from '@/lib/actions';
 
 export default function MyDayPage() {
   const { currentUser } = useCurrentUser();
@@ -37,6 +38,7 @@ export default function MyDayPage() {
   const [historyAppointments, setHistoryAppointments] = useState<Appointment[]>([]);
   const [historyClient, setHistoryClient] = useState<Client | null>(null);
   const previousStatusesRef = useRef<Map<string, Appointment['status']>>(new Map());
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     const fetchAppointments = async (showLoader = false) => {
@@ -103,6 +105,33 @@ export default function MyDayPage() {
     }
   }, [currentUser, toast]);
 
+  const refreshAppointments = async () => {
+    if (!currentUser) return;
+    try {
+      const allAppointments = await getAppointments();
+      const todayAppointments = allAppointments
+        .filter(appt =>
+          (appt.assignments || []).some(a => a.employeeId === currentUser.id) &&
+          isToday(new Date(appt.date))
+        )
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      setDailyAppointments(todayAppointments);
+    } catch (error) {
+      console.error("Failed to refresh appointments:", error);
+    }
+  };
+
+  const handleAssignmentStatus = (
+    appointmentId: string,
+    employeeId: string,
+    status: 'pending' | 'in_progress' | 'completed'
+  ) => {
+    startTransition(async () => {
+      await updateAssignmentStatus(appointmentId, employeeId, status);
+      await refreshAppointments();
+    });
+  };
+
   const handleShowHistory = async (email: string) => {
     const [clientAppointments, clientDetails] = await Promise.all([
       getAppointments().then(apps => apps.filter(app => app.customerEmail === email)),
@@ -167,48 +196,95 @@ export default function MyDayPage() {
                   <TableHead>Hora</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Servicios</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>Estado Turno</TableHead>
+                  <TableHead>Mi Progreso</TableHead>
                   <TableHead className="text-right">Historial</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {dailyAppointments.length > 0 ? (
-                  dailyAppointments.map(appt => (
-                    <TableRow key={appt.id}>
-                      <TableCell className="font-semibold">
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4" />
-                          {format(new Date(appt.date), 'p', { locale: es })}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                         <Button variant="link" asChild className="p-0 h-auto font-medium">
+                  dailyAppointments.map(appt => {
+                    const myAssignments = (appt.assignments || [])
+                      .map((a, idx) => ({ assignment: a, idx }))
+                      .filter(({ assignment }) => assignment.employeeId === currentUser?.id);
+
+                    return (
+                      <TableRow key={appt.id}>
+                        <TableCell className="font-semibold">
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4" />
+                            {format(new Date(appt.date), 'p', { locale: es })}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="link" asChild className="p-0 h-auto font-medium">
                             <Link href={`/admin/clients/${encodeURIComponent(appt.customerEmail)}`}>
                               {appt.customerName}
                             </Link>
-                         </Button>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {(Array.isArray(appt.serviceNames) ? appt.serviceNames : [appt.serviceNames]).map(name => (
-                            <Badge key={name} variant="secondary">{name}</Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusVariant(appt.status)} className="capitalize">{getStatusText(appt.status)}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleShowHistory(appt.customerEmail); }}>
-                             <History className="h-4 w-4" />
-                             <span className="sr-only">Ver Historial</span>
                           </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {(Array.isArray(appt.serviceNames) ? appt.serviceNames : [appt.serviceNames]).map(name => (
+                              <Badge key={name} variant="secondary">{name}</Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getStatusVariant(appt.status)} className="capitalize">{getStatusText(appt.status)}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-2">
+                            {myAssignments.map(({ assignment, idx }) => {
+                              const serviceName = appt.serviceNames?.[idx] ?? 'Servicio';
+                              const assignmentStatus = assignment.status ?? 'pending';
+                              return (
+                                <div key={idx} className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">{serviceName}:</span>
+                                  {assignmentStatus === 'completed' ? (
+                                    <Badge className="bg-green-600 text-white">Terminado</Badge>
+                                  ) : assignmentStatus === 'in_progress' ? (
+                                    <>
+                                      <Badge variant="default">En Proceso</Badge>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={isPending}
+                                        onClick={() => handleAssignmentStatus(appt.id, assignment.employeeId, 'completed')}
+                                      >
+                                        {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Finalizar'}
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Badge variant="outline">Pendiente</Badge>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={isPending}
+                                        onClick={() => handleAssignmentStatus(appt.id, assignment.employeeId, 'in_progress')}
+                                      >
+                                        {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Iniciar'}
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleShowHistory(appt.customerEmail); }}>
+                            <History className="h-4 w-4" />
+                            <span className="sr-only">Ver Historial</span>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center h-24">
+                    <TableCell colSpan={6} className="text-center h-24">
                       No tienes turnos para hoy.
                     </TableCell>
                   </TableRow>

@@ -36,6 +36,8 @@ import { createUser } from './auth-actions';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { revalidatePath } from 'next/cache';
 import type { Appointment, AppointmentAssignment, Client, Product, Service, User } from './types';
+import { AppointmentModel } from './models';
+import { connectToDatabase } from './mongodb';
 import { format, toDate } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -244,6 +246,21 @@ export async function billAppointment(id: string) {
 
 export async function revertAppointment(id: string) {
     return updateAppointmentStatus(id, 'completed');
+}
+
+export async function updateAssignmentStatus(
+    appointmentId: string,
+    employeeId: string,
+    status: 'pending' | 'in_progress' | 'completed'
+): Promise<void> {
+    await connectToDatabase();
+    await AppointmentModel.findByIdAndUpdate(
+        appointmentId,
+        { $set: { 'assignments.$[elem].status': status } },
+        { arrayFilters: [{ 'elem.employeeId': employeeId }], new: true }
+    );
+    revalidatePath('/admin/my-day');
+    revalidatePath('/admin/agenda');
 }
 
 export async function billAllClientAppointments(appointmentIds: string[]) {

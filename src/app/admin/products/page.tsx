@@ -170,7 +170,8 @@ export default function ProductsPage() {
                         <TableRow>
                             <TableHead>Código</TableHead>
                             <TableHead>Nombre</TableHead>
-                            <TableHead className="text-right">Precio</TableHead>
+                            <TableHead className="text-right">Precio Tarjeta</TableHead>
+                            <TableHead className="text-right">Precio Efectivo</TableHead>
                             {canManage && <TableHead className="text-right">Acciones</TableHead>}
                         </TableRow>
                     </TableHeader>
@@ -183,6 +184,9 @@ export default function ProductsPage() {
                                 </TableCell>
                                 <TableCell className="text-right">
                                     ${(product.price / 100).toFixed(2)}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    {product.cashPrice ? `$${(product.cashPrice / 100).toFixed(2)}` : '-'}
                                 </TableCell>
                                 {canManage && (
                                 <TableCell className="text-right">

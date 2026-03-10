@@ -20,6 +20,7 @@ export function ServiceModal({ isOpen, onClose, service }: ServiceModalProps) {
   const [name, setName] = useState('');
   const [duration, setDuration] = useState(30);
   const [price, setPrice] = useState(0);
+  const [cashPrice, setCashPrice] = useState(0);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -29,11 +30,13 @@ export function ServiceModal({ isOpen, onClose, service }: ServiceModalProps) {
       setName(service.name || '');
       setDuration(service.duration || 30);
       setPrice((service.price || 0) / 100);
+      setCashPrice(service.cashPrice ? service.cashPrice / 100 : 0);
     } else {
       setCode('');
       setName('');
       setDuration(30);
       setPrice(0);
+      setCashPrice(0);
     }
   }, [service]);
 
@@ -44,6 +47,7 @@ export function ServiceModal({ isOpen, onClose, service }: ServiceModalProps) {
             name,
             duration,
             price: Math.round(price * 100),
+            cashPrice: cashPrice > 0 ? Math.round(cashPrice * 100) : undefined,
         };
 
         try {
@@ -82,9 +86,15 @@ export function ServiceModal({ isOpen, onClose, service }: ServiceModalProps) {
             <Label htmlFor="duration">Duración (en minutos)</Label>
             <Input id="duration" type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="price">Precio</Label>
-            <Input id="price" type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="price">Precio Tarjeta</Label>
+              <Input id="price" type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cashPrice">Precio Efectivo</Label>
+              <Input id="cashPrice" type="number" value={cashPrice} onChange={(e) => setCashPrice(Number(e.target.value))} />
+            </div>
           </div>
         </div>
         <DialogFooter>

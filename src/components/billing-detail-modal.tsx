@@ -49,13 +49,13 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup }: BillingDet
         }
     }, [billingGroup]);
 
-    const { totalServices, totalProducts, grandTotal, allServiceNames, allEmployeeNames } = useMemo(() => {
-        if (!billingGroup) return { totalServices: 0, totalProducts: 0, grandTotal: 0, allServiceNames: [], allEmployeeNames: [] };
-        
+    const { totalServices, totalProducts, grandTotal, totalServicesCash, totalProductsCash, grandTotalCash, allServiceNames, allEmployeeNames } = useMemo(() => {
+        if (!billingGroup) return { totalServices: 0, totalProducts: 0, grandTotal: 0, totalServicesCash: 0, totalProductsCash: 0, grandTotalCash: 0, allServiceNames: [], allEmployeeNames: [] };
+
         const allAppointments = billingGroup.appointments;
         const allServiceIds = allAppointments.flatMap(a => (a.assignments || []).map(as => as.serviceId));
         const allProductIds = allAppointments.flatMap(a => a.productIds || []);
-        
+
         const uniqueEmployeeNames = [...new Set(allAppointments.map(a => a.employeeName).filter(Boolean))];
 
         const services = allServices.filter(s => allServiceIds.includes(s.id));
@@ -63,12 +63,17 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup }: BillingDet
 
         const totalServices = services.reduce((sum, s) => sum + s.price, 0);
         const totalProducts = products.reduce((sum, p) => sum + p.price, 0);
+        const totalServicesCash = services.reduce((sum, s) => sum + (s.cashPrice ?? s.price), 0);
+        const totalProductsCash = products.reduce((sum, p) => sum + (p.cashPrice ?? p.price), 0);
         const allServiceNames = services.map(s => s.name);
 
         return {
             totalServices: totalServices / 100,
             totalProducts: totalProducts / 100,
             grandTotal: (totalServices + totalProducts) / 100,
+            totalServicesCash: totalServicesCash / 100,
+            totalProductsCash: totalProductsCash / 100,
+            grandTotalCash: (totalServicesCash + totalProductsCash) / 100,
             allServiceNames,
             allEmployeeNames: uniqueEmployeeNames
         }
@@ -117,8 +122,12 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup }: BillingDet
                 <h4 className="font-semibold flex items-center gap-2"><Scissors className="h-4 w-4"/>Servicios</h4>
                 {allServiceNames.map(name => <p key={name} className="text-sm pl-6">{name}</p>)}
                 <div className="flex justify-between pl-6 pt-1 text-sm font-medium">
-                    <span>Subtotal Servicios:</span>
+                    <span>Subtotal Servicios (Tarjeta):</span>
                     <span>${totalServices.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between pl-6 text-sm font-medium text-muted-foreground">
+                    <span>Subtotal Servicios (Efectivo):</span>
+                    <span>${totalServicesCash.toFixed(2)}</span>
                 </div>
             </div>
 
@@ -132,8 +141,12 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup }: BillingDet
                         <p key={p.id} className="text-sm pl-6">{p.name}</p>
                     ))}
                     <div className="flex justify-between pl-6 pt-1 text-sm font-medium">
-                        <span>Subtotal Productos:</span>
+                        <span>Subtotal Productos (Tarjeta):</span>
                         <span>${totalProducts.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between pl-6 text-sm font-medium text-muted-foreground">
+                        <span>Subtotal Productos (Efectivo):</span>
+                        <span>${totalProductsCash.toFixed(2)}</span>
                     </div>
                 </div>
                 </>
@@ -155,8 +168,12 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup }: BillingDet
 
             {/* Total */}
              <div className="flex justify-between items-center text-lg font-bold pt-2">
-                <p className="flex items-center gap-2"><DollarSign className="h-5 w-5"/>Total a Facturar</p>
+                <p className="flex items-center gap-2"><DollarSign className="h-5 w-5"/>Total Tarjeta</p>
                 <span>${grandTotal.toFixed(2)}</span>
+             </div>
+             <div className="flex justify-between items-center text-lg font-bold">
+                <p className="flex items-center gap-2"><DollarSign className="h-5 w-5"/>Total Efectivo</p>
+                <span>${grandTotalCash.toFixed(2)}</span>
              </div>
         </div>
         <DialogFooter>

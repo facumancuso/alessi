@@ -172,7 +172,8 @@ export default function ServicesPage() {
                             <TableHead>Código</TableHead>
                             <TableHead>Nombre</TableHead>
                             <TableHead>Duración (min)</TableHead>
-                            <TableHead className="text-right">Precio</TableHead>
+                            <TableHead className="text-right">Precio Tarjeta</TableHead>
+                            <TableHead className="text-right">Precio Efectivo</TableHead>
                             {canManage && <TableHead className="text-right">Acciones</TableHead>}
                         </TableRow>
                     </TableHeader>
@@ -186,6 +187,9 @@ export default function ServicesPage() {
                                 <TableCell>{service.duration}</TableCell>
                                 <TableCell className="text-right">
                                     ${(service.price / 100).toFixed(2)}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    {service.cashPrice ? `$${(service.cashPrice / 100).toFixed(2)}` : '-'}
                                 </TableCell>
                                 {canManage && (
                                 <TableCell className="text-right">

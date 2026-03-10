@@ -151,17 +151,23 @@ export default function NewAppointmentPage() {
         return allServices.filter(service => (service.name || '').toLowerCase().includes(query));
     }, [allServices, serviceSearchTerm]);
 
-    const { totalDuration, totalPrice } = useMemo(() => {
+    const { totalDuration, totalPrice, totalCashPrice } = useMemo(() => {
         const servicesDuration = assignments.reduce((sum, a) => sum + (a.duration || 0), 0);
         const servicesPrice = selectedServicesDetails.reduce((sum, a) => sum + (a.service?.price || 0), 0);
+        const servicesCashPrice = selectedServicesDetails.reduce((sum, a) => sum + (a.service?.cashPrice ?? a.service?.price ?? 0), 0);
         const productsPrice = selectedProductIds.reduce((sum, productId) => {
             const product = allProducts.find(p => p.id === productId);
             return sum + (product?.price || 0);
         }, 0);
-        
+        const productsCashPrice = selectedProductIds.reduce((sum, productId) => {
+            const product = allProducts.find(p => p.id === productId);
+            return sum + (product?.cashPrice ?? product?.price ?? 0);
+        }, 0);
+
         return {
-        totalDuration: servicesDuration,
-        totalPrice: (servicesPrice + productsPrice) / 100
+            totalDuration: servicesDuration,
+            totalPrice: (servicesPrice + productsPrice) / 100,
+            totalCashPrice: (servicesCashPrice + productsCashPrice) / 100,
         };
     }, [assignments, selectedServicesDetails, selectedProductIds, allProducts]);
 
@@ -251,12 +257,20 @@ export default function NewAppointmentPage() {
     }
     
     const addAssignment = () => {
-        const firstAvailableEmployee = employees[0];
-        if (firstAvailableEmployee) {
-            setAssignments([...assignments, { employeeId: firstAvailableEmployee.id, time: '10:00', duration: 30 }]);
-        } else {
+        const isHairdresser = currentUser?.role === 'Peluquero';
+        const defaultEmployee = isHairdresser
+            ? employees.find(e => e.id === currentUser?.id) || employees[0]
+            : employees[0];
+
+        if (!defaultEmployee) {
             toast({ variant: 'destructive', title: 'No hay empleados', description: 'No se pueden añadir servicios sin empleados disponibles.' });
+            return;
         }
+
+        const now = new Date();
+        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+        setAssignments([...assignments, { employeeId: defaultEmployee.id, time: currentTime, duration: 30 }]);
     }
     
     const updateAssignment = (index: number, field: keyof AppointmentAssignment, value: string | number) => {
@@ -436,7 +450,7 @@ export default function NewAppointmentPage() {
                                                 </Select>
                                             </TableCell>
                                             <TableCell>
-                                                <Input type="time" value={assignment.time || ''} onChange={(e) => updateAssignment(index, 'time', e.target.value)} disabled={!canEdit}/>
+                                                <Input type="time" value={assignment.time || ''} onChange={(e) => updateAssignment(index, 'time', e.target.value)} disabled={index === 0 ? !isReceptionOrAdmin : !canEdit}/>
                                             </TableCell>
                                              <TableCell>
                                                 <Input type="number" value={assignment.duration || 0} onChange={(e) => updateAssignment(index, 'duration', parseInt(e.target.value, 10))} disabled={!canEdit}/>
@@ -559,10 +573,16 @@ export default function NewAppointmentPage() {
                                 <p className="font-medium">{totalDuration} min</p>
                             </div>
                             {isReceptionOrAdmin && (
-                                <div className="flex justify-between font-semibold text-base pt-2">
-                                    <p className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Precio Total:</p>
-                                    <p>${totalPrice.toFixed(2)}</p>
-                                </div>
+                                <>
+                                    <div className="flex justify-between font-semibold text-base pt-2">
+                                        <p className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Total Tarjeta:</p>
+                                        <p>${totalPrice.toFixed(2)}</p>
+                                    </div>
+                                    <div className="flex justify-between font-semibold text-base">
+                                        <p className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Total Efectivo:</p>
+                                        <p>${totalCashPrice.toFixed(2)}</p>
+                                    </div>
+                                </>
                             )}
                         </CardContent>
                     </Card>

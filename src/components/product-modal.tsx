@@ -19,6 +19,7 @@ export function ProductModal({ isOpen, onClose, product }: ProductModalProps) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState(0);
+  const [cashPrice, setCashPrice] = useState(0);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -27,10 +28,12 @@ export function ProductModal({ isOpen, onClose, product }: ProductModalProps) {
       setCode(product.code || '');
       setName(product.name || '');
       setPrice((product.price || 0) / 100);
+      setCashPrice(product.cashPrice ? product.cashPrice / 100 : 0);
     } else {
       setCode('');
       setName('');
       setPrice(0);
+      setCashPrice(0);
     }
   }, [product]);
 
@@ -40,6 +43,7 @@ export function ProductModal({ isOpen, onClose, product }: ProductModalProps) {
             code,
             name,
             price: Math.round(price * 100),
+            cashPrice: cashPrice > 0 ? Math.round(cashPrice * 100) : undefined,
         };
 
         try {
@@ -74,9 +78,15 @@ export function ProductModal({ isOpen, onClose, product }: ProductModalProps) {
             <Label htmlFor="name">Nombre del producto</Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="price">Precio</Label>
-            <Input id="price" type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="price">Precio Tarjeta</Label>
+              <Input id="price" type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cashPrice">Precio Efectivo</Label>
+              <Input id="cashPrice" type="number" value={cashPrice} onChange={(e) => setCashPrice(Number(e.target.value))} />
+            </div>
           </div>
         </div>
         <DialogFooter>
