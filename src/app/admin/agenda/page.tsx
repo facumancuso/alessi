@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAppointments, getUsers, getAppointmentsByClient, getClientByEmail } from '@/lib/data';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, setHours, setMinutes, addMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar as CalendarIcon, Filter, Clock, PlusCircle, Loader2, Upload, Download, Edit, User, Scissors } from 'lucide-react';
+import { Calendar as CalendarIcon, Filter, Clock, PlusCircle, Loader2, Upload, Download, Edit, User as UserIcon, Scissors } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { Appointment, AppointmentAssignment, Client, User } from '@/lib/types';
@@ -405,7 +405,7 @@ function DayView({
                                                                 <TooltipContent side="right" className="max-w-[220px] p-0 overflow-hidden">
                                                                     <div className="px-3 py-2 space-y-1.5">
                                                                         <div className="flex items-center gap-1.5 font-semibold text-sm">
-                                                                            <User className="h-3.5 w-3.5 shrink-0" />
+                                                                            <UserIcon className="h-3.5 w-3.5 shrink-0" />
                                                                             {appt.customerName}
                                                                         </div>
                                                                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
