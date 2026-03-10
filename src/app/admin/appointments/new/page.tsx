@@ -263,19 +263,7 @@ export default function NewAppointmentPage() {
     }
     
     const addAssignment = () => {
-        // Para el primer servicio, un Peluquero se asigna a sí mismo. Para los siguientes,
-        // hereda el empleado del último assignment para no pisar asignaciones hechas a otros.
-        const isFirstAssignment = assignments.length === 0;
-        let defaultEmployeeId: string | undefined;
-
-        if (isFirstAssignment && currentUser?.role === 'Peluquero') {
-            defaultEmployeeId = currentUser.id;
-        } else {
-            const lastAssignmentEmployeeId = assignments[assignments.length - 1]?.employeeId;
-            defaultEmployeeId = lastAssignmentEmployeeId ?? employees[0]?.id;
-        }
-
-        if (!defaultEmployeeId && employees.length === 0) {
+        if (employees.length === 0) {
             toast({ variant: 'destructive', title: 'No hay empleados', description: 'No se pueden añadir servicios sin empleados disponibles.' });
             return;
         }
@@ -283,52 +271,55 @@ export default function NewAppointmentPage() {
         const now = new Date();
         const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-        setAssignments([...assignments, { employeeId: defaultEmployeeId, time: currentTime, duration: 30 }]);
-    }
-    
-    const updateAssignment = (index: number, field: keyof AppointmentAssignment, value: string | number) => {
-        const newAssignments = [...assignments];
-        const oldAssignment = newAssignments[index];
-        newAssignments[index] = { ...oldAssignment, [field]: value };
-        
-        if (field === 'serviceId') {
-            const service = allServices.find(s => s.id === value);
-            if (service) {
-                newAssignments[index].duration = service.duration;
+        setAssignments(prev => {
+            const isFirstAssignment = prev.length === 0;
+            let defaultEmployeeId: string | undefined;
+            if (isFirstAssignment && currentUser?.role === 'Peluquero') {
+                defaultEmployeeId = currentUser.id;
+            } else {
+                defaultEmployeeId = prev[prev.length - 1]?.employeeId ?? employees[0]?.id;
             }
-        }
-        
-        setAssignments(newAssignments);
+            return [...prev, { employeeId: defaultEmployeeId, time: currentTime, duration: 30 }];
+        });
     }
-    
+
+    const updateAssignment = (index: number, field: keyof AppointmentAssignment, value: string | number) => {
+        setAssignments(prev => {
+            const newAssignments = [...prev];
+            newAssignments[index] = { ...newAssignments[index], [field]: value };
+            if (field === 'serviceId') {
+                const service = allServices.find(s => s.id === value);
+                if (service) newAssignments[index].duration = service.duration;
+            }
+            return newAssignments;
+        });
+    }
+
     const removeAssignment = (index: number) => {
-        const newAssignments = [...assignments];
-        newAssignments.splice(index, 1);
-        setAssignments(newAssignments);
+        setAssignments(prev => prev.filter((_, i) => i !== index));
     }
 
     const getAssignmentProductSearchKey = (index: number) => `${index}`;
 
     const addProductToAssignment = (assignmentIndex: number, productId: string) => {
-        const newAssignments = [...assignments];
-        const assignment = newAssignments[assignmentIndex];
-        const currentProductIds = assignment.productIds || [];
-        newAssignments[assignmentIndex] = {
-            ...assignment,
-            productIds: [...currentProductIds, productId],
-        };
-        setAssignments(newAssignments);
+        setAssignments(prev => {
+            const newAssignments = [...prev];
+            const currentProductIds = newAssignments[assignmentIndex].productIds || [];
+            newAssignments[assignmentIndex] = { ...newAssignments[assignmentIndex], productIds: [...currentProductIds, productId] };
+            return newAssignments;
+        });
     }
 
     const removeProductFromAssignment = (assignmentIndex: number, productPosition: number) => {
-        const newAssignments = [...assignments];
-        const assignment = newAssignments[assignmentIndex];
-        const currentProductIds = assignment.productIds || [];
-        newAssignments[assignmentIndex] = {
-            ...assignment,
-            productIds: [...currentProductIds.slice(0, productPosition), ...currentProductIds.slice(productPosition + 1)],
-        };
-        setAssignments(newAssignments);
+        setAssignments(prev => {
+            const newAssignments = [...prev];
+            const currentProductIds = newAssignments[assignmentIndex].productIds || [];
+            newAssignments[assignmentIndex] = {
+                ...newAssignments[assignmentIndex],
+                productIds: [...currentProductIds.slice(0, productPosition), ...currentProductIds.slice(productPosition + 1)],
+            };
+            return newAssignments;
+        });
     }
     
      if (isLoading) {

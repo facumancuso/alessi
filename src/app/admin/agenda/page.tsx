@@ -202,21 +202,22 @@ function DayView({
                                     {dailyAppointments.flatMap(appt => {
                                         if (!appt.assignments) return [];
                                         return appt.assignments
-                                            .filter(assign => assign.employeeId === employee.id && assign.time && assign.duration)
-                                            .map((assignment, assignIndex) => {
+                                            .map((assign, originalIdx) => ({ assign, originalIdx }))
+                                            .filter(({ assign }) => assign.employeeId === employee.id && assign.time && assign.duration)
+                                            .map(({ assign: assignment, originalIdx }) => {
                                                 const { color } = getEmployeeForAssignment(assignment);
                                                 const top = getEventTop(assignment.time);
                                                 const height = getEventHeight(assignment.duration);
 
                                                 const currentStatus = appt.status;
 
-                                                const serviceName = appt.serviceNames?.[assignIndex] || 'Servicio';
+                                                const serviceName = appt.serviceNames?.[originalIdx] || 'Servicio';
                                                 const appointmentColorClasses = getAppointmentColorClasses(appt, day);
                                                 const visualHeight = Math.max(height, 44);
 
                                                 return (
                                                     <div 
-                                                        key={`${appt.id}-${assignIndex}`}
+                                                        key={`${appt.id}-${originalIdx}`}
                                                         className={cn(
                                                             "absolute left-2 right-2 rounded-xl cursor-pointer z-10 overflow-hidden border-l-4 border shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20",
                                                             appointmentColorClasses.card
