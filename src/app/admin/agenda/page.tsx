@@ -123,7 +123,7 @@ function DayView({
         : -1;
 
     const rowHeight = safeInterval * minuteHeight;
-    const minEmployeeColumnWidth = employeeFilter !== 'todos' ? 200 : 160;
+    const minEmployeeColumnWidth = employeeFilter !== 'todos' ? 160 : 130;
     const employeeGridTemplate = `repeat(${Math.max(visibleEmployees.length, 1)}, minmax(${minEmployeeColumnWidth}px, 1fr))`;
     
     useEffect(() => {
@@ -148,18 +148,18 @@ function DayView({
                     {visibleEmployees.map(employee => (
                         <div key={employee.id} className="border-l px-2 py-3 text-center font-semibold text-xs md:text-sm leading-tight">
                             {employee.name}
-                            <Badge variant="secondary" className="ml-2">{getAppointmentsForDay(day, employee.id).length}</Badge>
+                            <Badge variant="secondary" className="ml-2">{getAppointmentsForDay(day, employee.id).filter(a => a.status !== 'cancelled').length}</Badge>
                         </div>
                     ))}
                 </div>
             </div>
             <ScrollArea className="w-full whitespace-nowrap" style={{ height: '68vh' }}>
                 <div className="relative flex" style={{ height: totalHours * hourHeight }}>
-                    <div className="sticky left-0 bg-card z-20 w-16 md:w-20 text-right pr-2 border-r">
+                    <div className="sticky left-0 bg-card/80 backdrop-blur-sm z-20 w-16 md:w-20 text-right pr-2 border-r">
                         {timeSlots.map((time) => {
                             return (
-                                <div key={time} className="relative text-xs text-muted-foreground" style={{ height: rowHeight }}>
-                                    <div className="absolute -translate-y-1/2 pr-2">
+                                <div key={time} className="relative text-base text-muted-foreground" style={{ height: rowHeight }}>
+                                    <div className="absolute right-0 -translate-y-1/2 pr-2">
                                         {time}
                                     </div>
                                 </div>
@@ -171,8 +171,8 @@ function DayView({
                         {nowIndicatorTop > 0 && (
                             <div
                                 ref={timeIndicatorRef}
-                                className="absolute right-0 h-px bg-red-500 z-40"
-                                style={{ top: nowIndicatorTop, left: '4rem' }}
+                                className="absolute right-0 h-0.5 bg-red-500 z-40"
+                                style={{ top: nowIndicatorTop, left: 0 }}
                             >
                                 <div className="absolute -left-1 md:-left-2 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500"></div>
                             </div>
@@ -181,7 +181,7 @@ function DayView({
                             const dailyAppointments = getAppointmentsForDay(day, employee.id);
                             
                             return (
-                                <div key={employee.id} className="border-l relative min-w-[160px] md:min-w-[180px]">
+                                <div key={employee.id} className="border-l relative min-w-[130px] md:min-w-[150px]">
                                     {timeSlots.map((time, index) => {
                                         const [, m] = time.split(':').map(Number);
                                         const rowClass = m === 0
