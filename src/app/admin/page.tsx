@@ -17,19 +17,22 @@ import {
   } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getAppointments, getUsers } from "@/lib/data";
-import { format, isToday, isFuture, differenceInMinutes } from 'date-fns';
+import { completeAppointment, deleteAppointment, exportAppointments, markAppointmentWaiting, startAppointment } from '@/lib/actions';
+import { format, isToday, isFuture, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useState, useEffect, useTransition, useMemo } from "react";
 import type { Appointment, User } from "@/lib/types";
 import { WhatsAppDashboardButton } from "@/components/whatsapp-dashboard-button";
 import { useCurrentUser } from "./user-context";
-import { Loader2, Play, Check, Clock, User as UserIcon, Scissors } from "lucide-react";
+import { Loader2, Play, Check, Clock, User as UserIcon, Scissors, Download, Trash2, Filter, Calendar as CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { markAppointmentWaiting, startAppointment, completeAppointment } from "@/lib/actions";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { sortEmployeesByAgendaOrder } from "@/lib/employee-order";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Label } from "@/components/ui/label";
 
 interface NextAppointmentCardProps {
     appointment: Appointment;
@@ -86,117 +89,146 @@ function NextAppointmentCard({ appointment, role, onArrive, onStart, onComplete,
     );
 }
 
+function DeleteButton({ appointmentId, onDeleted }: { appointmentId: string, onDeleted: () => void }) {
+    const [isPending, startTransition] = useTransition();
+    const { toast } = useToast();
+
+    const handleDelete = () => {
+        if (!window.confirm('¿Eliminar este turno? Esta acción no se puede deshacer.')) return;
+        startTransition(async () => {
+            const result = await deleteAppointment(appointmentId);
+            if (result.success) {
+                toast({ title: 'Turno eliminado', description: 'El turno fue eliminado correctamente.' });
+                onDeleted();
+            } else {
+                toast({ variant: 'destructive', title: 'Error', description: result.message });
+            }
+        });
+    };
+
+    return (
+        <Button size="sm" variant="destructive" onClick={handleDelete} disabled={isPending}>
+            {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            Eliminar
+        </Button>
+    );
+}
+
+const getStatusLabel = (status: Appointment['status']) => {
+    const map: Record<string, string> = {
+        confirmed: 'Confirmado', waiting: 'En Espera', in_progress: 'En Proceso',
+        completed: 'Finalizado', cancelled: 'Cancelado', 'no-show': 'No Presentado', facturado: 'Facturado'
+    };
+    return map[status] ?? status;
+};
+
+const getStatusVariant = (status: Appointment['status']): "default" | "secondary" | "destructive" | "outline" => {
+    if (status === 'in_progress' || status === 'waiting') return 'default';
+    if (status === 'completed' || status === 'facturado') return 'secondary';
+    if (status === 'cancelled' || status === 'no-show') return 'destructive';
+    return 'outline';
+};
+
 export default function DashboardPage() {
     const { currentUser } = useCurrentUser();
     const { toast } = useToast();
-    const [dailyAppointments, setDailyAppointments] = useState<Appointment[]>([]);
+    const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
     const [allEmployees, setAllEmployees] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [isProcessing, startTransition] = useTransition();
+    const [isExporting, startExportTransition] = useTransition();
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [now, setNow] = useState(new Date());
 
-     useEffect(() => {
-        const timer = setInterval(() => setNow(new Date()), 60000); // Actualiza cada minuto
+    useEffect(() => {
+        const timer = setInterval(() => setNow(new Date()), 60000);
         return () => clearInterval(timer);
     }, []);
 
     const fetchPageData = () => {
         setLoading(true);
-        Promise.all([
-            getAppointments(),
-            getUsers()
-        ]).then(([allAppointments, allUsers]) => {
-            const todayAppointments = allAppointments
-                .filter(appt => isToday(new Date(appt.date)))
-                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-            
-            setDailyAppointments(todayAppointments);
-            const sortedEmployees = sortEmployeesByAgendaOrder(
-                allUsers.filter(u => u.role === 'Peluquero' && u.isActive)
-            );
-
-            setAllEmployees(sortedEmployees);
+        Promise.all([getAppointments(), getUsers()]).then(([appointments, users]) => {
+            setAllAppointments(appointments.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+            setAllEmployees(sortEmployeesByAgendaOrder(users.filter(u => u.role === 'Peluquero' && u.isActive)));
             setLoading(false);
         });
-    }
+    };
 
-    useEffect(() => {
-        fetchPageData();
-    }, [currentUser]);
+    useEffect(() => { fetchPageData(); }, [currentUser]);
+
+    const selectedDateAppointments = useMemo(() =>
+        allAppointments.filter(appt => isSameDay(new Date(appt.date), selectedDate)),
+        [allAppointments, selectedDate]
+    );
+
+    const todayAppointments = useMemo(() =>
+        allAppointments.filter(appt => isToday(new Date(appt.date))),
+        [allAppointments]
+    );
 
     const nextAppointmentsByEmployee = useMemo(() => {
         const nextAppointments: Record<string, Appointment> = {};
         const activeStatuses: Appointment['status'][] = ['confirmed', 'waiting', 'in_progress'];
-
         allEmployees.forEach(employee => {
-            const nextAppt = dailyAppointments.find(appt => 
+            const nextAppt = todayAppointments.find(appt =>
                 (appt.assignments || []).some(a => a.employeeId === employee.id) &&
                 activeStatuses.includes(appt.status) &&
                 (appt.status !== 'confirmed' || isFuture(new Date(appt.date)))
             );
-            if (nextAppt) {
-                if (!nextAppointments[nextAppt.id]) {
-                    nextAppointments[nextAppt.id] = nextAppt;
-                }
+            if (nextAppt && !nextAppointments[nextAppt.id]) {
+                nextAppointments[nextAppt.id] = nextAppt;
             }
         });
-
         return Object.values(nextAppointments);
-    }, [dailyAppointments, allEmployees, now]);
+    }, [todayAppointments, allEmployees, now]);
 
-
-    const handleStartAppointment = (id: string) => {
-        startTransition(async () => {
-            await startAppointment(id);
-            toast({ title: "Turno iniciado", description: "El turno ha sido marcado como 'En Proceso'." });
-            fetchPageData();
-        });
-    }
-
-    const handleArrivalAppointment = (id: string) => {
+    const handleArrival = (id: string) => {
         startTransition(async () => {
             await markAppointmentWaiting(id);
-            toast({ title: "Cliente en espera", description: "El turno se marcó como 'En Espera'. Empleados notificados en el panel." });
+            toast({ title: "Cliente en espera", description: "Empleados notificados en el panel." });
             fetchPageData();
         });
-    }
-
-    const handleCompleteAppointment = (id: string) => {
-        startTransition(async () => {
-            await completeAppointment(id);
-            toast({ title: "Turno completado", description: "El turno fue marcado como 'Terminado'. Recepción notificada en el panel." });
-            fetchPageData();
-        });
-    }
-    
-    type DisplayStatus = 'Confirmado' | 'En Espera' | 'En Proceso' | 'Finalizado' | 'Cancelado' | 'No Presentado' | 'Facturado';
-
-    const getDisplayStatus = (appt: Appointment): DisplayStatus => {
-        if (appt.status === 'completed') return 'Finalizado';
-        if (appt.status === 'cancelled') return 'Cancelado';
-        if (appt.status === 'no-show') return 'No Presentado';
-        if (appt.status === 'facturado') return 'Facturado';
-        if (appt.status === 'in_progress') return 'En Proceso';
-        if (appt.status === 'waiting') return 'En Espera';
-        
-        return 'Confirmado';
     };
 
+    const handleStart = (id: string) => {
+        startTransition(async () => {
+            await startAppointment(id);
+            toast({ title: "Turno iniciado" });
+            fetchPageData();
+        });
+    };
 
-    const getStatusVariant = (status: DisplayStatus): "default" | "secondary" | "destructive" | "outline" => {
-        switch (status) {
-            case 'En Proceso': return 'default';
-            case 'En Espera': return 'default';
-            case 'Finalizado': return 'secondary';
-            case 'Facturado': return 'secondary';
-            case 'Cancelado': return 'destructive';
-            case 'No Presentado': return 'destructive';
-            default: return 'outline';
-        }
-    }
+    const handleComplete = (id: string) => {
+        startTransition(async () => {
+            await completeAppointment(id);
+            toast({ title: "Turno completado" });
+            fetchPageData();
+        });
+    };
 
+    const handleExport = () => {
+        startExportTransition(async () => {
+            try {
+                const csvData = await exportAppointments();
+                const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', 'turnos.csv');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                toast({ title: 'Exportación completa' });
+            } catch {
+                toast({ variant: 'destructive', title: 'Error de exportación' });
+            }
+        });
+    };
 
     const currentRole = currentUser?.role;
+    const canDeleteAppointments = currentRole === 'Superadmin' || currentRole === 'Gerente' || currentRole === 'Recepcion';
+    const canManageExports = currentRole === 'Superadmin' || currentRole === 'Gerente';
+    const viewingToday = isToday(selectedDate);
 
     if (loading) {
         return <div className="flex justify-center items-center h-48"><Loader2 className="h-8 w-8 animate-spin" /></div>;
@@ -204,37 +236,69 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-6">
+            {/* Próximos turnos por peluquero — solo hoy */}
+            {viewingToday && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Próximos Turnos por Peluquero</CardTitle>
+                        <CardDescription>Visualiza el siguiente turno para cada peluquero y gestiona su estado.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {nextAppointmentsByEmployee.length > 0 ? (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                {nextAppointmentsByEmployee.map(appt => (
+                                    <NextAppointmentCard
+                                        key={appt.id}
+                                        appointment={appt}
+                                        role={currentRole}
+                                        onArrive={handleArrival}
+                                        onStart={handleStart}
+                                        onComplete={handleComplete}
+                                        isProcessing={isProcessing}
+                                    />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center text-muted-foreground p-4 border rounded-lg">
+                                <p>No hay más turnos confirmados para hoy.</p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Agenda del día con selector de fecha */}
             <Card>
-                <CardHeader>
-                    <CardTitle>Próximos Turnos por Peluquero</CardTitle>
-                    <CardDescription>Visualiza el siguiente turno para cada peluquero y gestiona su estado.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {nextAppointmentsByEmployee.length > 0 ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {nextAppointmentsByEmployee.map(appt => (
-                                <NextAppointmentCard 
-                                    key={appt.id}
-                                    appointment={appt}
-                                    role={currentRole}
-                                    onArrive={handleArrivalAppointment}
-                                    onStart={handleStartAppointment}
-                                    onComplete={handleCompleteAppointment}
-                                    isProcessing={isProcessing}
-                                />
-                            ))}
+                <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div>
+                        <CardTitle>Agenda</CardTitle>
+                        <CardDescription>
+                            Turnos para el {format(selectedDate, 'PPP', { locale: es })}.
+                        </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <div className="flex items-center gap-2">
+                            <Filter className="h-4 w-4 text-muted-foreground" />
+                            <Label>Fecha:</Label>
                         </div>
-                    ) : (
-                         <div className="text-center text-muted-foreground p-4 border rounded-lg">
-                            <p>No hay más turnos confirmados para hoy.</p>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader>
-                    <CardTitle>Agenda del Día</CardTitle>
-                    <CardDescription>Aquí puedes ver todos los turnos para hoy, {format(new Date(), 'PPP', { locale: es })}.</CardDescription>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" className={cn("w-full md:w-[240px] justify-start text-left font-normal", !selectedDate && "text-muted-foreground")}>
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {format(selectedDate, "PPP", { locale: es })}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar mode="single" selected={selectedDate} onSelect={(d) => d && setSelectedDate(d)} initialFocus locale={es} />
+                            </PopoverContent>
+                        </Popover>
+                        {canManageExports && (
+                            <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+                                {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                                Exportar
+                            </Button>
+                        )}
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -249,50 +313,42 @@ export default function DashboardPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {dailyAppointments.length > 0 ? dailyAppointments.map((appt) => {
-                                const displayStatus = getDisplayStatus(appt);
-                                return (
-                                <TableRow key={appt.id} className={cn(displayStatus === 'En Proceso' && 'bg-primary/10 font-bold')}>
-                                    <TableCell>
-                                        {format(new Date(appt.date), "p", { locale: es })}
-                                    </TableCell>
+                            {selectedDateAppointments.length > 0 ? selectedDateAppointments.map((appt) => (
+                                <TableRow key={appt.id} className={cn(appt.status === 'in_progress' && 'bg-primary/10 font-bold')}>
+                                    <TableCell>{format(new Date(appt.date), "p", { locale: es })}</TableCell>
                                     <TableCell>
                                         <div className="font-medium">{appt.customerName}</div>
                                     </TableCell>
-                                    <TableCell>{(Array.isArray(appt.serviceNames) ? appt.serviceNames.join(', ') : appt.serviceNames)}</TableCell>
+                                    <TableCell>{Array.isArray(appt.serviceNames) ? appt.serviceNames.join(', ') : appt.serviceNames}</TableCell>
                                     <TableCell>{appt.employeeName}</TableCell>
                                     <TableCell>
-                                        <Badge variant={getStatusVariant(displayStatus)} className={cn(displayStatus === 'En Espera' && 'animate-pulse')}>
-                                            {displayStatus}
+                                        <Badge variant={getStatusVariant(appt.status)} className={cn(appt.status === 'waiting' && 'animate-pulse')}>
+                                            {getStatusLabel(appt.status)}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="text-right">
+                                    <TableCell className="text-right space-x-2">
                                         {appt.status === 'confirmed' && <WhatsAppDashboardButton appointment={appt} />}
                                         {(currentRole === 'Recepcion' || currentRole === 'Gerente' || currentRole === 'Superadmin') && appt.status === 'confirmed' && (
-                                            <Button size="sm" variant="outline" onClick={() => handleArrivalAppointment(appt.id)} disabled={isProcessing}>
-                                                <Clock className="mr-2 h-4 w-4" />
-                                                En espera
+                                            <Button size="sm" variant="outline" onClick={() => handleArrival(appt.id)} disabled={isProcessing}>
+                                                <Clock className="mr-2 h-4 w-4" /> En espera
                                             </Button>
                                         )}
                                         {(currentRole === 'Peluquero' || currentRole === 'Gerente' || currentRole === 'Superadmin') && appt.status === 'waiting' && (
-                                            <Button size="sm" variant="outline" onClick={() => handleStartAppointment(appt.id)} disabled={isProcessing}>
-                                                <Play className="mr-2 h-4 w-4" />
-                                                Iniciar
+                                            <Button size="sm" variant="outline" onClick={() => handleStart(appt.id)} disabled={isProcessing}>
+                                                <Play className="mr-2 h-4 w-4" /> Iniciar
                                             </Button>
                                         )}
                                         {(currentRole === 'Peluquero' || currentRole === 'Gerente' || currentRole === 'Superadmin') && appt.status === 'in_progress' && (
-                                            <Button size="sm" onClick={() => handleCompleteAppointment(appt.id)} disabled={isProcessing}>
-                                                <Check className="mr-2 h-4 w-4" />
-                                                Finalizar
+                                            <Button size="sm" onClick={() => handleComplete(appt.id)} disabled={isProcessing}>
+                                                <Check className="mr-2 h-4 w-4" /> Finalizar
                                             </Button>
                                         )}
                                     </TableCell>
                                 </TableRow>
-                                )
-                            }) : (
+                            )) : (
                                 <TableRow>
                                     <TableCell colSpan={6} className="text-center h-24">
-                                        No hay turnos para hoy.
+                                        No hay turnos para esta fecha.
                                     </TableCell>
                                 </TableRow>
                             )}
@@ -300,6 +356,53 @@ export default function DashboardPage() {
                     </Table>
                 </CardContent>
             </Card>
+
+            {/* Eliminar turnos */}
+            {canDeleteAppointments && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Eliminar Turnos</CardTitle>
+                        <CardDescription>Eliminación rápida de turnos del día seleccionado.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Hora</TableHead>
+                                    <TableHead>Cliente</TableHead>
+                                    <TableHead>Servicio</TableHead>
+                                    <TableHead>Estado</TableHead>
+                                    <TableHead className="text-right">Acción</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {selectedDateAppointments.length > 0 ? selectedDateAppointments.map((appt) => (
+                                    <TableRow key={`del-${appt.id}`}>
+                                        <TableCell>{format(new Date(appt.date), "p", { locale: es })}</TableCell>
+                                        <TableCell>
+                                            <div className="font-medium">{appt.customerName}</div>
+                                            <div className="text-sm text-muted-foreground">{appt.customerEmail}</div>
+                                        </TableCell>
+                                        <TableCell>{Array.isArray(appt.serviceNames) ? appt.serviceNames.join(', ') : appt.serviceNames}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={getStatusVariant(appt.status)}>{getStatusLabel(appt.status)}</Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <DeleteButton appointmentId={appt.id} onDeleted={fetchPageData} />
+                                        </TableCell>
+                                    </TableRow>
+                                )) : (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center">
+                                            No hay turnos para eliminar en esta fecha.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 }

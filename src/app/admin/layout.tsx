@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Logo } from "@/components/icons";
-import { LayoutDashboard, Calendar, Settings, XCircle, LogOut, Users, CalendarCheck, Package, Scissors, User, CheckCircle, Briefcase, TrendingUp, DollarSign, Download, Loader2, DatabaseZap, Trash2, Edit, Upload as UploadIcon } from "lucide-react";
+import { LayoutDashboard, Settings, XCircle, LogOut, Users, CalendarCheck, Package, Scissors, User, CheckCircle, Briefcase, TrendingUp, DollarSign, Download, Loader2, DatabaseZap, Trash2, Edit, Upload as UploadIcon } from "lucide-react";
 import { usePathname, useRouter } from 'next/navigation';
 import { getUserByEmail, getUsers } from "@/lib/data";
 import { useEffect, useState } from "react";
@@ -179,14 +179,6 @@ export default function AdminLayout({
               )}
               {canManageAppointments && (
               <>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={pathname === '/admin/appointments'}>
-                    <Link href="/admin/appointments">
-                      <Calendar />
-                      Turnos
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={pathname === '/admin/appointments/fast-entry'}>
                     <Link href="/admin/appointments/fast-entry">
