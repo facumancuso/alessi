@@ -263,12 +263,19 @@ export default function NewAppointmentPage() {
     }
     
     const addAssignment = () => {
-        const isHairdresser = currentUser?.role === 'Peluquero';
-        const defaultEmployee = isHairdresser
-            ? employees.find(e => e.id === currentUser?.id) || employees[0]
-            : employees[0];
+        // Para el primer servicio, un Peluquero se asigna a sí mismo. Para los siguientes,
+        // hereda el empleado del último assignment para no pisar asignaciones hechas a otros.
+        const isFirstAssignment = assignments.length === 0;
+        let defaultEmployeeId: string | undefined;
 
-        if (!defaultEmployee) {
+        if (isFirstAssignment && currentUser?.role === 'Peluquero') {
+            defaultEmployeeId = currentUser.id;
+        } else {
+            const lastAssignmentEmployeeId = assignments[assignments.length - 1]?.employeeId;
+            defaultEmployeeId = lastAssignmentEmployeeId ?? employees[0]?.id;
+        }
+
+        if (!defaultEmployeeId && employees.length === 0) {
             toast({ variant: 'destructive', title: 'No hay empleados', description: 'No se pueden añadir servicios sin empleados disponibles.' });
             return;
         }
@@ -276,7 +283,7 @@ export default function NewAppointmentPage() {
         const now = new Date();
         const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-        setAssignments([...assignments, { employeeId: defaultEmployee.id, time: currentTime, duration: 30 }]);
+        setAssignments([...assignments, { employeeId: defaultEmployeeId, time: currentTime, duration: 30 }]);
     }
     
     const updateAssignment = (index: number, field: keyof AppointmentAssignment, value: string | number) => {

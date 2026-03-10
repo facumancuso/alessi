@@ -208,12 +208,17 @@ export default function MyDayPage() {
                       .map((a, idx) => ({ assignment: a, idx }))
                       .filter(({ assignment }) => assignment.employeeId === currentUser?.id);
 
+                    const myTime = myAssignments[0]?.assignment?.time;
+                    const displayDate = myTime
+                      ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${myTime}:00`)
+                      : new Date(appt.date);
+
                     return (
                       <TableRow key={appt.id}>
                         <TableCell className="font-semibold">
                           <div className="flex items-center gap-2">
                             <Clock className="h-4 w-4" />
-                            {format(new Date(appt.date), 'p', { locale: es })}
+                            {format(displayDate, 'p', { locale: es })}
                           </div>
                         </TableCell>
                         <TableCell>
