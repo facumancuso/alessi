@@ -35,7 +35,7 @@ export function WhatsAppReminderButton({ appointments, clientName, clientPhone, 
             const appointmentDate = new Date(futureConfirmedAppointment.date);
             const date = format(appointmentDate, "eeee dd 'de' MMMM", { locale: es });
             const time = format(appointmentDate, "HH:mm", { locale: es });
-            const message = `¡Hola ${clientName.toUpperCase()}! Te recordamos tu turno en Alessi Hairdressing, día ${date}, a las ${time} hs. Recuerda que el tiempo de tolerancia es de 10 minutos. ¡Te esperamos!`;
+            const message = `¡Hola ${clientName.toUpperCase()}! 😊\nTe recordamos tu turno en Alessi Hairdressing el día ${date} a las ${time} hs.\n\nPara poder respetar los horarios de todos nuestros clientes, contamos con 10 minutos de tolerancia desde la hora del turno.\n\n¡Te esperamos! ✂️`;
             setWhatsAppLink(`https://web.whatsapp.com/send?phone=${clientPhone}&text=${encodeURIComponent(message)}`);
             setShowButton(true);
         } else {
