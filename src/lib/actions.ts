@@ -260,13 +260,13 @@ export async function updateAssignmentStatus(
         { arrayFilters: [{ 'elem.employeeId': employeeId }], new: true }
     );
 
-    // Si todas las assignments están completadas, pasar a facturado
+    // Si todas las assignments están completadas, pasar a completed para que aparezca en "Por Cobrar"
     if (status === 'completed' && updated) {
         const allDone = (updated.assignments || []).every(
             (a: { status?: string }) => a.status === 'completed'
         );
         if (allDone) {
-            await AppointmentModel.findByIdAndUpdate(appointmentId, { $set: { status: 'facturado' } });
+            await AppointmentModel.findByIdAndUpdate(appointmentId, { $set: { status: 'completed' } });
         }
     }
 
