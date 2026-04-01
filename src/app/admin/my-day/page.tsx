@@ -56,9 +56,21 @@ export default function MyDayPage() {
         const todayAppointments = allAppointments
           .filter(appt => 
             (appt.assignments || []).some(a => a.employeeId === currentUser.id) && 
-            isToday(new Date(appt.date))
+            isToday(new Date(appt.date)) &&
+            appt.status !== 'cancelled'
           )
-          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          .sort((a, b) => {
+            // Get the employee's specific time for each appointment
+            const getEmployeeTime = (appt: Appointment) => {
+              const myAssignment = (appt.assignments || []).find(a => a.employeeId === currentUser.id);
+              if (myAssignment?.time) {
+                return new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${myAssignment.time}:00`).getTime();
+              }
+              return new Date(appt.date).getTime();
+            };
+            
+            return getEmployeeTime(a) - getEmployeeTime(b);
+          });
 
         // Notify employee when a known appointment transitions to waiting
         const previousStatuses = previousStatusesRef.current;
@@ -112,9 +124,21 @@ export default function MyDayPage() {
       const todayAppointments = allAppointments
         .filter(appt =>
           (appt.assignments || []).some(a => a.employeeId === currentUser.id) &&
-          isToday(new Date(appt.date))
+          isToday(new Date(appt.date)) &&
+          appt.status !== 'cancelled'
         )
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        .sort((a, b) => {
+          // Get the employee's specific time for each appointment
+          const getEmployeeTime = (appt: Appointment) => {
+            const myAssignment = (appt.assignments || []).find(a => a.employeeId === currentUser.id);
+            if (myAssignment?.time) {
+              return new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${myAssignment.time}:00`).getTime();
+            }
+            return new Date(appt.date).getTime();
+          };
+          
+          return getEmployeeTime(a) - getEmployeeTime(b);
+        });
       setDailyAppointments(todayAppointments);
     } catch (error) {
       console.error("Failed to refresh appointments:", error);
