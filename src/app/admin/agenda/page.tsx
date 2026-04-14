@@ -820,7 +820,7 @@ export default function AgendaPage() {
               <Card>
                   <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                       <div className="space-y-1.5">
-                        <CardTitle>Agenda del Día: {format(date, "PPP", { locale: es })}</CardTitle>
+                        <CardTitle>Agenda del Día: {format(date, "EEEE d 'de' MMMM", { locale: es })}</CardTitle>
                          <CardDescription>
                           {(employeeFilter !== 'todos' && !isHairdresser) ? `Mostrando agenda para ${visibleEmployees[0]?.name}.` : 'Mostrando todos los empleados.'}
                         </CardDescription>
