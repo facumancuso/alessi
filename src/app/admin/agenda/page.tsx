@@ -143,6 +143,8 @@ interface PendingMove {
     newEmployeeName: string;
 }
 
+const attendedStatuses = new Set<Appointment['status']>(['completed', 'facturado']);
+
 function DayView({
   day,
   viewStartHour,
@@ -157,6 +159,8 @@ function DayView({
   employeeFilter,
   timeSlots,
   allEmployees,
+    totalAppointmentsCount,
+    attendedAppointmentsCount,
   onMoveAssignment,
 }: {
   day: Date;
@@ -172,6 +176,8 @@ function DayView({
   employeeFilter: string;
   timeSlots: string[];
   allEmployees: User[];
+    totalAppointmentsCount: number;
+    attendedAppointmentsCount: number;
   onMoveAssignment: (apptId: string, idx: number, newTime: string, newEmployeeId: string) => Promise<void>;
 }) {
     const timeIndicatorRef = useRef<HTMLDivElement>(null);
@@ -257,6 +263,16 @@ function DayView({
             </AlertDialogContent>
         </AlertDialog>
         <div className="flex flex-col">
+            <div className="grid gap-3 border-b bg-muted/30 px-4 py-3 text-sm md:grid-cols-2">
+                <div>
+                    <span className="font-medium text-foreground">Turnos del día:</span>{' '}
+                    <span className="text-lg font-semibold text-foreground">{totalAppointmentsCount}</span>
+                </div>
+                <div>
+                    <span className="font-medium text-foreground">Turnos atendidos:</span>{' '}
+                    <span className="text-lg font-semibold text-foreground">{attendedAppointmentsCount}</span>
+                </div>
+            </div>
             <div className="flex sticky top-0 bg-card/95 backdrop-blur z-30 border-b">
                  <div className="w-16 md:w-20 flex-shrink-0 border-r pt-4"></div>
                  <div className="grid flex-1" style={{ gridTemplateColumns: employeeGridTemplate }}>
@@ -553,6 +569,33 @@ export default function AgendaPage() {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
 
+  const getAppointmentsForDaySummary = (day: Date) => {
+      let appointmentsToFilter = [...appointments];
+
+      if (employeeFilter !== 'todos') {
+          appointmentsToFilter = appointmentsToFilter.filter(appt => {
+              if (appt.assignments && appt.assignments.length > 0) {
+                  return appt.assignments.some(a => a.employeeId === employeeFilter);
+              }
+
+              return appt.employeeId === employeeFilter;
+          });
+      }
+
+      return appointmentsToFilter
+          .filter(appt => isSameDay(new Date(appt.date), day))
+          .filter(appt => appt.status !== 'cancelled');
+  };
+
+  const dayAppointmentsSummary = useMemo(() => {
+      const dayAppointments = getAppointmentsForDaySummary(date);
+
+      return {
+          totalAppointmentsCount: dayAppointments.length,
+          attendedAppointmentsCount: dayAppointments.filter(appt => attendedStatuses.has(appt.status)).length,
+      };
+  }, [appointments, date, employeeFilter]);
+
     const getAppointmentColorClasses = (appointment: Appointment, day: Date) => {
         if (appointment.status === 'cancelled') {
             return {
@@ -819,6 +862,8 @@ export default function AgendaPage() {
                             employeeFilter={employeeFilter}
                             timeSlots={timeSlots}
                             allEmployees={allEmployees}
+                                                        totalAppointmentsCount={dayAppointmentsSummary.totalAppointmentsCount}
+                                                        attendedAppointmentsCount={dayAppointmentsSummary.attendedAppointmentsCount}
                             onMoveAssignment={handleMoveAssignment}
                         />
                     )}
