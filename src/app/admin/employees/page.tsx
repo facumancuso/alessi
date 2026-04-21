@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 type EmployeeStats = {
   user: User;
   totalAppointments: number;
+  totalServices: number;
   allAppointments: Appointment[];
 };
 
@@ -42,16 +43,17 @@ export default function EmployeesPage() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [allServices, setAllServices] = useState<Service[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const totalServicesOfDay = stats.reduce((sum, stat) => sum + stat.totalServices, 0);
 
   useEffect(() => {
     const fetchData = async () => {
-        const [users, completedAppointments, servicesData] = await Promise.all([
+      const [users, appointments, servicesData] = await Promise.all([
             getUsers(),
-            getAppointments('completed'),
+        getAppointments(),
             getServices()
         ]);
         setAllUsers(users.filter(u => u.role === 'Peluquero'));
-        setAllAppointments(completedAppointments);
+      setAllAppointments(appointments);
         setAllServices(servicesData);
     }
     fetchData();
@@ -60,21 +62,29 @@ export default function EmployeesPage() {
   useEffect(() => {
     if (!allUsers.length || !allAppointments.length) return;
 
-    const filteredAppointments = allAppointments.filter(a => isSameDay(new Date(a.date), selectedDate));
+    const filteredAppointments = allAppointments.filter(
+      a => isSameDay(new Date(a.date), selectedDate) && a.status !== 'cancelled' && a.status !== 'no-show'
+    );
 
     const employeeStats = allUsers.map(employee => {
         const employeeAppointments = filteredAppointments
             .filter(a => (a.assignments || []).some(assign => assign.employeeId === employee.id))
             .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        const employeeServices = employeeAppointments.reduce((sum, appt) => {
+          const serviceCountForEmployee = (appt.assignments || []).filter(assign => assign.employeeId === employee.id).length;
+          return sum + serviceCountForEmployee;
+        }, 0);
         
         return {
             user: employee,
             totalAppointments: employeeAppointments.length,
+          totalServices: employeeServices,
             allAppointments: employeeAppointments,
         };
     });
 
-    const sortedStats = employeeStats.sort((a, b) => b.totalAppointments - a.totalAppointments);
+      const sortedStats = employeeStats.sort((a, b) => b.totalServices - a.totalServices);
     setStats(sortedStats);
     setTopPerformer(sortedStats[0] || null);
   }, [selectedDate, allAppointments, allUsers, allServices]);
@@ -84,10 +94,10 @@ export default function EmployeesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Rendimiento de Empleados</CardTitle>
-          <CardDescription>Métricas y estadísticas de los trabajos realizados por cada empleado para el día seleccionado.</CardDescription>
+          <CardDescription>Métricas y estadísticas de los servicios del día (excluye cancelados y no asistió).</CardDescription>
         </CardHeader>
         <CardContent>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4">
                 <Label htmlFor="date-filter" className="flex items-center gap-2">
                     <Filter className="h-4 w-4"/>
                     Filtrar por día:
@@ -106,11 +116,14 @@ export default function EmployeesPage() {
                     <Calendar mode="single" selected={selectedDate} onSelect={(d) => d && setSelectedDate(d)} initialFocus locale={es} />
                     </PopoverContent>
                 </Popover>
+                <Badge variant="secondary" className="text-sm font-semibold">
+                  Total servicios del día: {totalServicesOfDay}
+                </Badge>
             </div>
         </CardContent>
       </Card>
       
-      {topPerformer && topPerformer.totalAppointments > 0 && (
+      {topPerformer && topPerformer.totalServices > 0 && (
         <Card className="bg-gradient-to-r from-primary/10 to-transparent border-primary/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -125,7 +138,7 @@ export default function EmployeesPage() {
             <div className="grid gap-2">
               <p className="text-2xl font-bold">{topPerformer.user.name}</p>
               <div className="flex flex-col sm:flex-row gap-x-4 gap-y-1 text-muted-foreground">
-                <span className="flex items-center gap-1"><TrendingUp className="h-4 w-4" /> {topPerformer.totalAppointments} trabajos</span>
+                <span className="flex items-center gap-1"><TrendingUp className="h-4 w-4" /> {topPerformer.totalServices} servicios</span>
               </div>
             </div>
           </CardContent>
@@ -135,7 +148,7 @@ export default function EmployeesPage() {
       <Accordion type="single" collapsible className="w-full" defaultValue={stats[0]?.user.id}>
         {stats.map((stat, index) => (
           <AccordionItem value={stat.user.id} key={stat.user.id}>
-            <AccordionTrigger className={cn(stat.user.id === topPerformer?.user.id && stat.totalAppointments > 0 && 'font-bold text-primary')}>
+            <AccordionTrigger className={cn(stat.user.id === topPerformer?.user.id && stat.totalServices > 0 && 'font-bold text-primary')}>
               <div className="flex items-center gap-4 flex-1">
                  <span className="font-bold text-lg text-muted-foreground w-6">#{index + 1}</span>
                  <Avatar className="h-10 w-10">
@@ -143,16 +156,16 @@ export default function EmployeesPage() {
                     <AvatarFallback>{stat.user.name.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <span className="font-semibold text-base">{stat.user.name}</span>
-                <Badge variant={stat.user.id === topPerformer?.user.id && stat.totalAppointments > 0 ? 'default' : 'secondary'}>{stat.totalAppointments} trabajos</Badge>
+                <Badge variant={stat.user.id === topPerformer?.user.id && stat.totalServices > 0 ? 'default' : 'secondary'}>{stat.totalServices} servicios</Badge>
               </div>
             </AccordionTrigger>
             <AccordionContent>
-                {stat.totalAppointments > 0 ? (
+                {stat.totalServices > 0 ? (
                     <div className="space-y-6 p-4">
                         <div className="grid md:grid-cols-1 gap-4 text-lg">
                             <div className="flex items-center justify-between rounded-lg border p-4">
-                                <span className="text-muted-foreground">Total de Trabajos Completados:</span>
-                                <strong className="text-2xl">{stat.totalAppointments}</strong>
+                        <span className="text-muted-foreground">Total de Servicios del Día:</span>
+                        <strong className="text-2xl">{stat.totalServices}</strong>
                             </div>
                         </div>
                         
@@ -186,7 +199,7 @@ export default function EmployeesPage() {
                     </div>
                 ) : (
                     <div className="text-center text-muted-foreground p-8">
-                        No hay trabajos completados para este empleado en la fecha seleccionada.
+                    No hay servicios registrados para este empleado en la fecha seleccionada.
                     </div>
                 )}
             </AccordionContent>

@@ -785,7 +785,7 @@ export default function NewAppointmentPage() {
                                             <span className="text-xs text-muted-foreground flex items-center gap-1.5">
                                                 <DollarSign className="h-3.5 w-3.5" /> Efectivo
                                             </span>
-                                            <span className="text-base font-bold tabular-nums text-green-600 dark:text-green-400">${totalCashPrice.toFixed(2)}</span>
+                                            <span className="text-base font-bold tabular-nums text-black">${totalCashPrice.toFixed(2)}</span>
                                         </div>
                                     </div>
                                 </>

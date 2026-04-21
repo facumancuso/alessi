@@ -125,7 +125,7 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup }: BillingDet
                     <span>Subtotal Servicios (Tarjeta):</span>
                     <span>${totalServices.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between pl-6 text-sm font-medium text-muted-foreground">
+                <div className="flex justify-between pl-6 text-sm font-medium text-black">
                     <span>Subtotal Servicios (Efectivo):</span>
                     <span>${totalServicesCash.toFixed(2)}</span>
                 </div>
@@ -144,7 +144,7 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup }: BillingDet
                         <span>Subtotal Productos (Tarjeta):</span>
                         <span>${totalProducts.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between pl-6 text-sm font-medium text-muted-foreground">
+                    <div className="flex justify-between pl-6 text-sm font-medium text-black">
                         <span>Subtotal Productos (Efectivo):</span>
                         <span>${totalProductsCash.toFixed(2)}</span>
                     </div>

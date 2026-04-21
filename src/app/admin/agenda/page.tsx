@@ -26,7 +26,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { sortEmployeesByAgendaOrder } from '@/lib/employee-order';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const employeeColors = [
     { bg: 'bg-white', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
@@ -121,6 +120,13 @@ interface AppointmentPreviewData {
     employeeName: string;
 }
 
+interface AppointmentPreviewPanelData extends AppointmentPreviewData {
+    blockId: string;
+    top: number;
+    left: number;
+    side: 'right' | 'left';
+}
+
 const attendedStatuses = new Set<Appointment['status']>(['completed', 'facturado']);
 
 function DayView({
@@ -142,7 +148,6 @@ function DayView({
         pendingServicesCount,
   onMoveAssignment,
     isHairdresser,
-    onAppointmentPreview,
     onOpenMyDay,
 }: {
   day: Date;
@@ -163,15 +168,18 @@ function DayView({
         pendingServicesCount: number;
   onMoveAssignment: (apptId: string, idx: number, newTime: string, newEmployeeId: string) => Promise<void>;
     isHairdresser: boolean;
-    onAppointmentPreview: (data: AppointmentPreviewData) => void;
     onOpenMyDay: (appointmentId: string) => void;
 }) {
     const timeIndicatorRef = useRef<HTMLDivElement>(null);
+        const timelineContainerRef = useRef<HTMLDivElement>(null);
+        const previewPanelRef = useRef<HTMLDivElement>(null);
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [hoverSlot, setHoverSlot] = useState<{ time: string; employeeId: string } | null>(null);
     const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
     const [isMoving, setIsMoving] = useState(false);
     const [hoveredRow, setHoveredRow] = useState<{ top: number; height: number } | null>(null);
+        const [focusedRow, setFocusedRow] = useState<{ top: number; height: number } | null>(null);
+        const [previewPanel, setPreviewPanel] = useState<AppointmentPreviewPanelData | null>(null);
     const lastTapRef = useRef<{ blockId: string; at: number } | null>(null);
     const minuteHeight = 1.3;
     const timelineTopOffset = 14;
@@ -206,6 +214,25 @@ function DayView({
             timeIndicatorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }, [nowIndicatorTop, day, now]);
+
+    useEffect(() => {
+        if (!previewPanel) return;
+
+        const closePreviewIfClickedOutside = (event: MouseEvent | TouchEvent) => {
+            if (!previewPanelRef.current) return;
+            const target = event.target as Node;
+            if (previewPanelRef.current.contains(target)) return;
+            setPreviewPanel(null);
+        };
+
+        document.addEventListener('mousedown', closePreviewIfClickedOutside);
+        document.addEventListener('touchstart', closePreviewIfClickedOutside);
+
+        return () => {
+            document.removeEventListener('mousedown', closePreviewIfClickedOutside);
+            document.removeEventListener('touchstart', closePreviewIfClickedOutside);
+        };
+    }, [previewPanel]);
 
     const getEmployeeForAssignment = (assignment: AppointmentAssignment) => {
         const employee = allEmployees.find(e => e.id === assignment.employeeId);
@@ -284,6 +311,7 @@ function DayView({
             </div>
             <ScrollArea className="w-full whitespace-nowrap" style={{ height: '64vh' }}>
                 <div className="relative flex min-w-full" style={{ height: totalHours * hourHeight + timelineTopOffset }}>
+                    <div ref={timelineContainerRef} className="absolute inset-0 pointer-events-none" />
                     {hoveredRow && (
                         <div
                             className="absolute left-0 right-0 pointer-events-none z-[15]"
@@ -294,6 +322,19 @@ function DayView({
                                 borderTop: '2px solid hsl(220 90% 50% / 0.7)',
                                 borderBottom: '2px solid hsl(220 90% 50% / 0.7)',
                                 boxShadow: '0 0 12px hsl(220 90% 56% / 0.15)',
+                            }}
+                        />
+                    )}
+                    {focusedRow && (
+                        <div
+                            className="absolute left-0 right-0 pointer-events-none z-[16]"
+                            style={{
+                                top: focusedRow.top,
+                                height: focusedRow.height,
+                                background: 'hsl(214 100% 54% / 0.12)',
+                                borderTop: '2px solid hsl(214 100% 45% / 0.65)',
+                                borderBottom: '2px solid hsl(214 100% 45% / 0.65)',
+                                boxShadow: '0 0 12px hsl(214 100% 54% / 0.2)',
                             }}
                         />
                     )}
@@ -436,6 +477,7 @@ function DayView({
                                                                         className={cn(
                                                                             "agenda-appointment-card absolute rounded-xl cursor-pointer z-10 overflow-hidden border-l-4 border shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20",
                                                                             appointmentColorClasses.card,
+                                                                            previewPanel?.blockId === blockId && 'ring-2 ring-primary/40 shadow-lg',
                                                                             canManageAgenda && "cursor-grab active:cursor-grabbing"
                                                                         )}
                                                                         style={{ top, height: visualHeight, left: colLeft, width: colWidth, ['--employee-hue' as string]: employeeHue }}
@@ -459,13 +501,38 @@ function DayView({
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             if (isHairdresser) {
+                                                                                const cardElement = e.currentTarget;
+                                                                                const cardRect = cardElement.getBoundingClientRect();
+                                                                                const timelineRect = timelineContainerRef.current?.getBoundingClientRect();
                                                                                 const employeeName = allEmployees.find(emp => emp.id === assignment.employeeId)?.name || 'Profesional';
-                                                                                onAppointmentPreview({
-                                                                                    appointment: appt,
-                                                                                    assignment,
-                                                                                    serviceName,
-                                                                                    employeeName,
-                                                                                });
+
+                                                                                cardElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                                                                                setFocusedRow({ top, height: visualHeight });
+
+                                                                                if (timelineRect) {
+                                                                                    const panelWidth = 290;
+                                                                                    const side = cardRect.left > timelineRect.left + timelineRect.width * 0.62 ? 'left' : 'right';
+                                                                                    const availableTop = Math.max(8, timelineRect.height - 236);
+                                                                                    const calculatedTop = Math.min(Math.max(8, cardRect.top - timelineRect.top), availableTop);
+                                                                                    const baseLeft = side === 'right'
+                                                                                        ? cardRect.right - timelineRect.left + 8
+                                                                                        : cardRect.left - timelineRect.left - panelWidth - 8;
+                                                                                    const calculatedLeft = Math.min(
+                                                                                        Math.max(8, baseLeft),
+                                                                                        Math.max(8, timelineRect.width - panelWidth - 8)
+                                                                                    );
+
+                                                                                    setPreviewPanel({
+                                                                                        blockId,
+                                                                                        top: calculatedTop,
+                                                                                        left: calculatedLeft,
+                                                                                        side,
+                                                                                        appointment: appt,
+                                                                                        assignment,
+                                                                                        serviceName,
+                                                                                        employeeName,
+                                                                                    });
+                                                                                }
                                                                                 return;
                                                                             }
                                                                             handleEditAppointment(appt);
@@ -523,6 +590,69 @@ function DayView({
                                 </div>
                             )
                         })}
+
+                        {isHairdresser && previewPanel && (
+                            <div
+                                ref={previewPanelRef}
+                                className="absolute z-50 w-[290px] rounded-xl border bg-card/95 backdrop-blur shadow-2xl"
+                                style={{ top: previewPanel.top, left: previewPanel.left }}
+                            >
+                                <div className="border-b px-3 py-2">
+                                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Vista rápida</p>
+                                    <p className="text-sm font-semibold leading-tight">{previewPanel.appointment.customerName}</p>
+                                </div>
+                                <div className="space-y-2 px-3 py-2 text-sm">
+                                    <div className="rounded-md border px-2 py-1.5">
+                                        <p className="text-[11px] text-muted-foreground">Profesional</p>
+                                        <p className="font-medium">{previewPanel.employeeName}</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="rounded-md border px-2 py-1.5">
+                                            <p className="text-[11px] text-muted-foreground">Horario</p>
+                                            <p className="font-medium">{previewPanel.assignment.time}</p>
+                                        </div>
+                                        <div className="rounded-md border px-2 py-1.5">
+                                            <p className="text-[11px] text-muted-foreground">Duración</p>
+                                            <p className="font-medium">{previewPanel.assignment.duration} min</p>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-md border px-2 py-1.5">
+                                        <p className="text-[11px] text-muted-foreground">Servicio</p>
+                                        <p className="font-medium">{previewPanel.serviceName}</p>
+                                    </div>
+                                    {previewPanel.appointment.notes && (
+                                        <div className="rounded-md border px-2 py-1.5">
+                                            <p className="text-[11px] text-muted-foreground">Notas</p>
+                                            <p className="text-xs leading-relaxed">{previewPanel.appointment.notes}</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex gap-2 border-t px-3 py-2">
+                                    <Button
+                                        size="sm"
+                                        className="h-8 flex-1 text-xs"
+                                        onClick={() => {
+                                            setPreviewPanel(null);
+                                            setFocusedRow(null);
+                                            onOpenMyDay(previewPanel.appointment.id);
+                                        }}
+                                    >
+                                        Ir a My Day
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-8 text-xs"
+                                        onClick={() => {
+                                            setPreviewPanel(null);
+                                            setFocusedRow(null);
+                                        }}
+                                    >
+                                        Cerrar
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
                 <ScrollBar orientation="horizontal" />
@@ -549,8 +679,6 @@ export default function AgendaPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [allEmployees, setAllEmployees] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-    const [isAppointmentPreviewOpen, setIsAppointmentPreviewOpen] = useState(false);
-    const [appointmentPreview, setAppointmentPreview] = useState<AppointmentPreviewData | null>(null);
   
   const [startHour, setStartHour] = useState(10);
   const [endHour, setEndHour] = useState(19);
@@ -732,11 +860,6 @@ export default function AgendaPage() {
       router.push(`/admin/appointments/new?id=${appointment.id}`);
   };
 
-  const handleOpenAppointmentPreview = (data: AppointmentPreviewData) => {
-      setAppointmentPreview(data);
-      setIsAppointmentPreviewOpen(true);
-  };
-
   const handleOpenInMyDay = (appointmentId?: string) => {
       if (!appointmentId) return;
       router.push(`/admin/my-day?appointmentId=${appointmentId}`);
@@ -915,65 +1038,6 @@ export default function AgendaPage() {
                 clientPhone={historyClient?.mobilePhone}
       />
       <input type="file" ref={importInputRef} className="hidden" onChange={handleFileImport} accept=".csv" />
-            <Dialog open={isAppointmentPreviewOpen} onOpenChange={setIsAppointmentPreviewOpen}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Detalle del turno</DialogTitle>
-                        <DialogDescription>
-                            Vista rápida del turno seleccionado.
-                        </DialogDescription>
-                    </DialogHeader>
-                    {appointmentPreview ? (
-                        <div className="space-y-3 text-sm">
-                            <div className="rounded-lg border bg-muted/20 px-3 py-2">
-                                <p className="text-xs text-muted-foreground">Cliente</p>
-                                <p className="font-semibold">{appointmentPreview.appointment.customerName}</p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="rounded-lg border px-3 py-2">
-                                    <p className="text-xs text-muted-foreground">Profesional</p>
-                                    <p className="font-medium">{appointmentPreview.employeeName}</p>
-                                </div>
-                                <div className="rounded-lg border px-3 py-2">
-                                    <p className="text-xs text-muted-foreground">Horario</p>
-                                    <p className="font-medium">{appointmentPreview.assignment.time}</p>
-                                </div>
-                                <div className="rounded-lg border px-3 py-2">
-                                    <p className="text-xs text-muted-foreground">Servicio</p>
-                                    <p className="font-medium">{appointmentPreview.serviceName}</p>
-                                </div>
-                                <div className="rounded-lg border px-3 py-2">
-                                    <p className="text-xs text-muted-foreground">Duración</p>
-                                    <p className="font-medium">{appointmentPreview.assignment.duration} min</p>
-                                </div>
-                            </div>
-                            {appointmentPreview.appointment.notes && (
-                                <div className="rounded-lg border px-3 py-2">
-                                    <p className="text-xs text-muted-foreground">Notas</p>
-                                    <p className="text-sm leading-relaxed">{appointmentPreview.appointment.notes}</p>
-                                </div>
-                            )}
-                        </div>
-                    ) : null}
-                    <DialogFooter className="gap-2">
-                        {appointmentPreview?.appointment.id && (
-                            <Button variant="outline" onClick={() => handleOpenInMyDay(appointmentPreview.appointment.id)}>
-                                Ir a My Day
-                            </Button>
-                        )}
-                        {!isHairdresser && appointmentPreview?.appointment && (
-                            <Button
-                                onClick={() => {
-                                    setIsAppointmentPreviewOpen(false);
-                                    handleEditAppointment(appointmentPreview.appointment);
-                                }}
-                            >
-                                Editar turno
-                            </Button>
-                        )}
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
       <div className="salon-shell space-y-4 md:space-y-5">
         <Tabs defaultValue="dia">
           <div className="flex justify-center mb-4">
@@ -1034,7 +1098,6 @@ export default function AgendaPage() {
                                                         pendingServicesCount={dayAppointmentsSummary.pendingServicesCount}
                             onMoveAssignment={handleMoveAssignment}
                             isHairdresser={!!isHairdresser}
-                            onAppointmentPreview={handleOpenAppointmentPreview}
                             onOpenMyDay={handleOpenInMyDay}
                         />
                     )}

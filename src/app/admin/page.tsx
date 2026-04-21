@@ -335,23 +335,23 @@ export default function DashboardPage() {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Hora</TableHead>
-                                <TableHead>Cliente</TableHead>
-                                <TableHead>Servicio</TableHead>
-                                <TableHead>Peluquero</TableHead>
-                                <TableHead>Estado</TableHead>
+                                <TableHead className="text-sm font-semibold">Hora</TableHead>
+                                <TableHead className="text-sm font-semibold">Cliente</TableHead>
+                                <TableHead className="text-sm font-semibold">Servicio</TableHead>
+                                <TableHead className="text-sm font-semibold">Peluquero</TableHead>
+                                <TableHead className="text-sm font-semibold">Estado</TableHead>
                                 <TableHead className="text-right">Acción</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {selectedDateAppointments.length > 0 ? selectedDateAppointments.map((appt) => (
                                 <TableRow key={appt.id} className={cn(appt.status === 'in_progress' && 'bg-primary/10 font-bold')}>
-                                    <TableCell>{format(new Date(appt.date), "p", { locale: es })}</TableCell>
+                                    <TableCell className="text-[15px] font-semibold">{format(new Date(appt.date), "p", { locale: es })}</TableCell>
                                     <TableCell>
-                                        <div className="font-medium">{appt.customerName}</div>
+                                        <div className="text-[15px] font-semibold">{appt.customerName}</div>
                                     </TableCell>
-                                    <TableCell>{Array.isArray(appt.serviceNames) ? appt.serviceNames.join(', ') : appt.serviceNames}</TableCell>
-                                    <TableCell>{appt.employeeName}</TableCell>
+                                    <TableCell className="text-[15px] font-medium">{Array.isArray(appt.serviceNames) ? appt.serviceNames.join(', ') : appt.serviceNames}</TableCell>
+                                    <TableCell className="text-[15px] font-medium">{appt.employeeName}</TableCell>
                                     <TableCell>
                                         <Badge variant={getStatusVariant(appt.status)} className={cn(appt.status === 'waiting' && 'animate-pulse')}>
                                             {getStatusLabel(appt.status)}
@@ -399,22 +399,22 @@ export default function DashboardPage() {
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Hora</TableHead>
-                                    <TableHead>Cliente</TableHead>
-                                    <TableHead>Servicio</TableHead>
-                                    <TableHead>Estado</TableHead>
+                                    <TableHead className="text-sm font-semibold">Hora</TableHead>
+                                    <TableHead className="text-sm font-semibold">Cliente</TableHead>
+                                    <TableHead className="text-sm font-semibold">Servicio</TableHead>
+                                    <TableHead className="text-sm font-semibold">Estado</TableHead>
                                     <TableHead className="text-right">Acción</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {selectedDateAppointments.length > 0 ? selectedDateAppointments.map((appt) => (
                                     <TableRow key={`del-${appt.id}`}>
-                                        <TableCell>{format(new Date(appt.date), "p", { locale: es })}</TableCell>
+                                        <TableCell className="text-[15px] font-semibold">{format(new Date(appt.date), "p", { locale: es })}</TableCell>
                                         <TableCell>
-                                            <div className="font-medium">{appt.customerName}</div>
+                                            <div className="text-[15px] font-semibold">{appt.customerName}</div>
                                             <div className="text-sm text-muted-foreground">{appt.customerEmail}</div>
                                         </TableCell>
-                                        <TableCell>{Array.isArray(appt.serviceNames) ? appt.serviceNames.join(', ') : appt.serviceNames}</TableCell>
+                                        <TableCell className="text-[15px] font-medium">{Array.isArray(appt.serviceNames) ? appt.serviceNames.join(', ') : appt.serviceNames}</TableCell>
                                         <TableCell>
                                             <Badge variant={getStatusVariant(appt.status)}>{getStatusLabel(appt.status)}</Badge>
                                         </TableCell>
