@@ -268,6 +268,16 @@ export default function MyDayPage() {
     [isEditingTurn, draftAssignments, selectedAppt, currentUser]
   );
 
+  const hasInProgressAssignment = useMemo(
+    () => myAssignments.some(({ assignment }) => (assignment.status ?? 'pending') === 'in_progress'),
+    [myAssignments]
+  );
+
+  const hasPendingAssignment = useMemo(
+    () => myAssignments.some(({ assignment }) => (assignment.status ?? 'pending') === 'pending'),
+    [myAssignments]
+  );
+
   useEffect(() => {
     setNotes(selectedAppt?.notes ?? '');
   }, [selectedAppt?.id, selectedAppt?.notes]);
@@ -313,7 +323,6 @@ export default function MyDayPage() {
     if (!selectedAppt || !currentUser) return;
     startTransition(async () => {
       await updateAssignmentStatus(selectedAppt.id, currentUser.id, status);
-      // Refresh
       const all = await getAppointments();
       setAllAppointments(all);
       const today = all
@@ -332,6 +341,39 @@ export default function MyDayPage() {
           return t(a) - t(b);
         });
       setDailyAppointments(today);
+    });
+  };
+
+  const handleTurnStatus = (status: Appointment['status']) => {
+    if (!selectedAppt || !currentUser) return;
+    startTransition(async () => {
+      try {
+        await updateAppointment(selectedAppt.id, { status });
+        const all = await getAppointments();
+        setAllAppointments(all);
+        const today = all
+          .filter(a =>
+            (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
+            isToday(new Date(a.date)) &&
+            a.status !== 'cancelled'
+          )
+          .sort((a, b) => {
+            const t = (appt: Appointment) => {
+              const m = (appt.assignments ?? []).find(x => x.employeeId === currentUser.id);
+              return m?.time
+                ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${m.time}:00`).getTime()
+                : new Date(appt.date).getTime();
+            };
+            return t(a) - t(b);
+          });
+        setDailyAppointments(today);
+      } catch {
+        toast({
+          variant: 'destructive',
+          title: 'No se pudo actualizar el turno',
+          description: 'Intenta nuevamente en unos segundos.',
+        });
+      }
     });
   };
 
@@ -658,6 +700,33 @@ export default function MyDayPage() {
                 <h3 className="font-semibold text-sm text-foreground">Turno Actual</h3>
               </div>
               <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
+                {!isEditingTurn && currentUser?.role === 'Peluquero' && (selectedAppt.status === 'confirmed' || selectedAppt.status === 'waiting') && (
+                  <Button
+                    size="sm"
+                    className="h-8 gap-1.5 text-[11px]"
+                    disabled={isPending}
+                    onClick={() => handleTurnStatus('in_progress')}
+                  >
+                    {isPending
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <PlayCircle className="h-3.5 w-3.5" />}
+                    Iniciar turno
+                  </Button>
+                )}
+                {!isEditingTurn && currentUser?.role === 'Peluquero' && selectedAppt.status === 'in_progress' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-[11px] border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
+                    disabled={isPending}
+                    onClick={() => handleTurnStatus('completed')}
+                  >
+                    {isPending
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    Finalizar turno
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
