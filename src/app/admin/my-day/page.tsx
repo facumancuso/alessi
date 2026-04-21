@@ -288,37 +288,6 @@ export default function MyDayPage() {
     [myAssignments]
   );
 
-  const getAssignmentTimestamp = (appt: Appointment, assignment: AppointmentAssignment) => {
-    const assignmentTime = assignment.time || format(new Date(appt.date), 'HH:mm');
-    return new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${assignmentTime}:00`).getTime();
-  };
-
-  const findPreviousUnfinishedAssignment = (appointmentId: string, assignmentIdx: number) => {
-    if (!currentUser) return null;
-    const targetAppointment = dailyAppointments.find(a => a.id === appointmentId);
-    const targetAssignment = targetAppointment?.assignments?.[assignmentIdx];
-    if (!targetAppointment || !targetAssignment) return null;
-
-    const targetTimestamp = getAssignmentTimestamp(targetAppointment, targetAssignment);
-    const targetClientKey = (targetAppointment.customerEmail || targetAppointment.customerName || '').toLowerCase().trim();
-
-    const previousUnfinished = dailyAppointments
-      .filter(a => a.status !== 'cancelled' && a.status !== 'no-show')
-      .filter(a => ((a.customerEmail || a.customerName || '').toLowerCase().trim()) === targetClientKey)
-      .flatMap(a =>
-        (a.assignments ?? [])
-          .map((asg, idx) => ({ appt: a, asg, idx }))
-      )
-      .filter(({ appt, asg, idx }) => {
-        if (appt.id === appointmentId && idx === assignmentIdx) return false;
-        const status = asg.status ?? 'pending';
-        return getAssignmentTimestamp(appt, asg) < targetTimestamp && status !== 'completed';
-      })
-      .sort((a, b) => getAssignmentTimestamp(a.appt, a.asg) - getAssignmentTimestamp(b.appt, b.asg))[0];
-
-    return previousUnfinished ?? null;
-  };
-
   useEffect(() => {
     setNotes(selectedAppt?.notes ?? '');
   }, [selectedAppt?.id, selectedAppt?.notes]);
@@ -362,18 +331,6 @@ export default function MyDayPage() {
 
   const handleStatus = (status: 'pending' | 'in_progress' | 'completed', assignmentIdx: number) => {
     if (!selectedAppt || !currentUser) return;
-
-    if (status === 'in_progress') {
-      const previousUnfinished = findPreviousUnfinishedAssignment(selectedAppt.id, assignmentIdx);
-      if (previousUnfinished) {
-        toast({
-          variant: 'destructive',
-          title: 'No se puede iniciar este turno todavía',
-          description: `Antes tenés que finalizar el turno de ${previousUnfinished.appt.customerName} (${previousUnfinished.asg.time}).`,
-        });
-        return;
-      }
-    }
 
     startTransition(async () => {
       await updateAssignmentStatus(selectedAppt.id, currentUser.id, status, assignmentIdx);
