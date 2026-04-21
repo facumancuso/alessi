@@ -50,35 +50,38 @@ function NextAppointmentCard({ appointment, role, onArrive, onStart, onComplete,
     const canComplete = (role === 'Peluquero' || role === 'Gerente' || role === 'Superadmin') && appointment.status === 'in_progress';
 
     return (
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border p-4 rounded-lg">
+        <div className="flex flex-col justify-between gap-3 rounded-lg border bg-muted/20 p-3">
             <div className="space-y-2">
-                <p className="flex items-center gap-2 font-bold text-base"><UserIcon className="h-5 w-5 text-primary"/> {appointment.employeeName}</p>
-                <div className="pl-7 space-y-1">
-                    <p className="flex items-center gap-2 font-semibold text-lg"><Clock className="h-5 w-5"/> {format(appointmentDate, "p", { locale: es })}</p>
-                    <Button variant="link" asChild className="p-0 h-auto -ml-1">
-                        <Link href={`/admin/clients/${encodeURIComponent(appointment.customerEmail)}`} className="flex items-center gap-2 text-base">
-                            <UserIcon className="h-4 w-4 text-muted-foreground"/> {appointment.customerName}
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <UserIcon className="h-4 w-4 text-muted-foreground"/>
+                    {appointment.employeeName}
+                </div>
+                <div className="space-y-1.5">
+                    <p className="flex items-center gap-2 text-base font-bold text-foreground"><Clock className="h-4 w-4"/> {format(appointmentDate, "p", { locale: es })}</p>
+                    <Button variant="link" asChild className="h-auto p-0">
+                        <Link href={`/admin/clients/${encodeURIComponent(appointment.customerEmail)}`} className="flex items-center gap-2 text-sm font-medium">
+                            <UserIcon className="h-3.5 w-3.5 text-muted-foreground"/> {appointment.customerName}
                         </Link>
                     </Button>
-                    <p className="flex items-center gap-2 text-sm"><Scissors className="h-4 w-4 text-muted-foreground"/> {(Array.isArray(appointment.serviceNames) ? appointment.serviceNames.join(', ') : appointment.serviceNames)}</p>
+                    <p className="flex items-center gap-2 text-xs text-muted-foreground"><Scissors className="h-3.5 w-3.5"/> {(Array.isArray(appointment.serviceNames) ? appointment.serviceNames.join(', ') : appointment.serviceNames)}</p>
                 </div>
             </div>
             {(canMarkArrival || canStart || canComplete) && (
-                <div className="flex gap-2 w-full md:w-auto self-end flex-wrap">
+                <div className="flex w-full flex-wrap gap-2">
                     {canMarkArrival && (
-                        <Button className="w-full" variant="outline" onClick={() => onArrive(appointment.id)} disabled={isProcessing}>
+                        <Button className="h-8 w-full text-xs" variant="outline" onClick={() => onArrive(appointment.id)} disabled={isProcessing}>
                             {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : <Clock className="h-4 w-4" />}
                             <span className="ml-2">En espera</span>
                         </Button>
                     )}
                     {canStart && (
-                    <Button className="w-full" variant="outline" onClick={() => onStart(appointment.id)} disabled={isProcessing}>
+                    <Button className="h-8 w-full text-xs" variant="outline" onClick={() => onStart(appointment.id)} disabled={isProcessing}>
                         {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : <Play className="h-4 w-4" />}
                         <span className="ml-2">Iniciar</span>
                     </Button>
                     )}
                     {canComplete && (
-                    <Button className="w-full" onClick={() => onComplete(appointment.id)} disabled={isProcessing}>
+                    <Button className="h-8 w-full text-xs" onClick={() => onComplete(appointment.id)} disabled={isProcessing}>
                         {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4" />}
                         <span className="ml-2">Finalizar</span>
                     </Button>
@@ -229,23 +232,51 @@ export default function DashboardPage() {
     const canDeleteAppointments = currentRole === 'Superadmin' || currentRole === 'Gerente' || currentRole === 'Recepcion';
     const canManageExports = currentRole === 'Superadmin' || currentRole === 'Gerente';
     const viewingToday = isToday(selectedDate);
+    const summary = useMemo(() => {
+        const source = selectedDateAppointments;
+        return {
+            total: source.length,
+            confirmed: source.filter(a => a.status === 'confirmed').length,
+            waiting: source.filter(a => a.status === 'waiting').length,
+            inProgress: source.filter(a => a.status === 'in_progress').length,
+        };
+    }, [selectedDateAppointments]);
 
     if (loading) {
         return <div className="flex justify-center items-center h-48"><Loader2 className="h-8 w-8 animate-spin" /></div>;
     }
 
     return (
-        <div className="space-y-6">
+        <div className="salon-shell myday-shell space-y-5 pb-10">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Turnos</p>
+                    <p className="mt-1 text-xl font-bold text-foreground">{summary.total}</p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Confirmados</p>
+                    <p className="mt-1 text-xl font-bold text-sky-700">{summary.confirmed}</p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">En espera</p>
+                    <p className="mt-1 text-xl font-bold text-amber-700">{summary.waiting}</p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">En proceso</p>
+                    <p className="mt-1 text-xl font-bold text-emerald-700">{summary.inProgress}</p>
+                </div>
+            </div>
+
             {/* Próximos turnos por peluquero — solo hoy */}
             {viewingToday && (
-                <Card>
-                    <CardHeader>
+                <Card className="rounded-lg border bg-card shadow-sm">
+                    <CardHeader className="px-4 py-3.5">
                         <CardTitle>Próximos Turnos por Peluquero</CardTitle>
                         <CardDescription>Visualiza el siguiente turno para cada peluquero y gestiona su estado.</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="px-4 pb-4 pt-0 space-y-3">
                         {nextAppointmentsByEmployee.length > 0 ? (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                                 {nextAppointmentsByEmployee.map(appt => (
                                     <NextAppointmentCard
                                         key={appt.id}
@@ -259,7 +290,7 @@ export default function DashboardPage() {
                                 ))}
                             </div>
                         ) : (
-                            <div className="text-center text-muted-foreground p-4 border rounded-lg">
+                            <div className="rounded-lg border border-dashed p-3 text-center text-sm text-muted-foreground">
                                 <p>No hay más turnos confirmados para hoy.</p>
                             </div>
                         )}
@@ -268,8 +299,8 @@ export default function DashboardPage() {
             )}
 
             {/* Agenda del día con selector de fecha */}
-            <Card>
-                <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <Card className="rounded-lg border bg-card shadow-sm">
+                <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 px-4 py-3.5">
                     <div>
                         <CardTitle>Agenda</CardTitle>
                         <CardDescription>
@@ -300,7 +331,7 @@ export default function DashboardPage() {
                         )}
                     </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="px-4 pb-4 pt-0">
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -359,12 +390,12 @@ export default function DashboardPage() {
 
             {/* Eliminar turnos */}
             {canDeleteAppointments && (
-                <Card>
-                    <CardHeader>
+                <Card className="rounded-lg border bg-card shadow-sm">
+                    <CardHeader className="px-4 py-3.5">
                         <CardTitle>Eliminar Turnos</CardTitle>
                         <CardDescription>Eliminación rápida de turnos del día seleccionado.</CardDescription>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="px-4 pb-4 pt-0">
                         <Table>
                             <TableHeader>
                                 <TableRow>

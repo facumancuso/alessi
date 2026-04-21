@@ -96,6 +96,7 @@ export default function ClientsPage() {
 
 
     useEffect(() => {
+        if (!currentUser) return; // wait for context to populate
         if (!canViewClients) {
           router.push('/admin');
           return;
@@ -103,7 +104,7 @@ export default function ClientsPage() {
         startTransition(async () => {
             await fetchClientsAndAppointments();
         });
-    }, [canViewClients, router]);
+    }, [currentUser, canViewClients]);
     
     const sortedAndFilteredClients = useMemo(() => {
         let sortableClients = [...clients];

@@ -28,47 +28,17 @@ import { Badge } from '@/components/ui/badge';
 import { sortEmployeesByAgendaOrder } from '@/lib/employee-order';
 
 const employeeColors = [
-    { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-500' },
-    { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-500' },
-    { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-500' },
-    { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-500' },
-    { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-500' },
-    { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-500' },
-    { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-500' },
+    { bg: 'bg-white', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
+    { bg: 'bg-slate-100', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
+    { bg: 'bg-white', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
+    { bg: 'bg-slate-100', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
+    { bg: 'bg-white', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
+    { bg: 'bg-slate-100', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
+    { bg: 'bg-white', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
 ];
 
-const fallbackColor = { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-500' };
+const fallbackColor = { bg: 'bg-white', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 };
 
-
-const statusColors: Record<Appointment['status'], string> = {
-    'confirmed': 'border-pink-500',
-    'waiting': 'border-yellow-500 animate-pulse',
-    'in_progress': 'border-orange-500',
-    'completed': 'border-green-500',
-    'cancelled': 'border-red-500 opacity-70',
-    'no-show': 'border-gray-500 opacity-70',
-    'facturado': 'border-blue-500'
-}
-
-const statusLabels: Record<Appointment['status'], string> = {
-    'confirmed': 'Confirmado',
-    'waiting': 'En espera',
-    'in_progress': 'En proceso',
-    'completed': 'Terminado',
-    'cancelled': 'Cancelado',
-    'no-show': 'No asistió',
-    'facturado': 'Facturado'
-}
-
-const statusPillStyles: Record<Appointment['status'], string> = {
-    'confirmed': 'bg-pink-100 text-pink-800',
-    'waiting': 'bg-yellow-100 text-yellow-800',
-    'in_progress': 'bg-orange-100 text-orange-800',
-    'completed': 'bg-green-100 text-green-800',
-    'cancelled': 'bg-red-100 text-red-800',
-    'no-show': 'bg-gray-100 text-gray-800',
-    'facturado': 'bg-blue-100 text-blue-800'
-}
 
 const hourOptions = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 
@@ -185,7 +155,9 @@ function DayView({
     const [hoverSlot, setHoverSlot] = useState<{ time: string; employeeId: string } | null>(null);
     const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
     const [isMoving, setIsMoving] = useState(false);
+    const [hoveredRow, setHoveredRow] = useState<{ top: number; height: number } | null>(null);
     const minuteHeight = 1.3;
+    const timelineTopOffset = 14;
     const hourHeight = 60 * minuteHeight;
     const totalHours = viewEndHour - viewStartHour;
     const safeInterval = Number.isFinite(viewInterval) && viewInterval > 0 ? viewInterval : 30;
@@ -194,7 +166,7 @@ function DayView({
         if (!timeStr) return 0;
         const [hours, minutes] = timeStr.split(':').map(Number);
         const totalMinutes = hours * 60 + minutes;
-        return (totalMinutes - viewStartHour * 60) * minuteHeight;
+        return (totalMinutes - viewStartHour * 60) * minuteHeight + timelineTopOffset;
     };
     
     const getEventHeight = (duration: number) => (duration || 0) * minuteHeight;
@@ -204,11 +176,12 @@ function DayView({
             : allEmployees;
 
     const nowIndicatorTop = isSameDay(day, now)
-        ? ((now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600) * 60 - viewStartHour * 60) * minuteHeight
+        ? ((now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600) * 60 - viewStartHour * 60) * minuteHeight + timelineTopOffset
         : -1;
 
     const rowHeight = safeInterval * minuteHeight;
-    const minEmployeeColumnWidth = employeeFilter !== 'todos' ? 160 : 130;
+    const slotsPerHour = Math.max(1, Math.round(60 / safeInterval));
+    const minEmployeeColumnWidth = employeeFilter !== 'todos' ? 150 : 120;
     const employeeGridTemplate = `repeat(${Math.max(visibleEmployees.length, 1)}, minmax(${minEmployeeColumnWidth}px, 1fr))`;
     
     useEffect(() => {
@@ -263,7 +236,7 @@ function DayView({
             </AlertDialogContent>
         </AlertDialog>
         <div className="flex flex-col">
-            <div className="grid gap-3 border-b bg-muted/30 px-4 py-3 text-sm md:grid-cols-2">
+            <div className="agenda-day-summary grid gap-3 border-b bg-muted/30 px-4 py-3 text-sm md:grid-cols-2">
                 <div>
                     <span className="font-medium text-foreground">Turnos del día:</span>{' '}
                     <span className="text-lg font-semibold text-foreground">{totalAppointmentsCount}</span>
@@ -273,65 +246,121 @@ function DayView({
                     <span className="text-lg font-semibold text-foreground">{attendedAppointmentsCount}</span>
                 </div>
             </div>
-            <div className="flex sticky top-0 bg-card/95 backdrop-blur z-30 border-b">
-                 <div className="w-16 md:w-20 flex-shrink-0 border-r pt-4"></div>
+            <div className="agenda-employee-header flex sticky top-0 bg-card/95 backdrop-blur z-30 border-b">
+                  <div className="w-24 md:w-28 flex-shrink-0 border-r pt-4"></div>
                  <div className="grid flex-1" style={{ gridTemplateColumns: employeeGridTemplate }}>
-                    {visibleEmployees.map(employee => (
-                        <div key={employee.id} className="border-l px-2 py-3 text-center font-semibold text-xs md:text-sm leading-tight">
+                    {visibleEmployees.map((employee, employeePosition) => (
+                        <div
+                            key={employee.id}
+                            className="border-l px-2 py-3 text-center font-semibold text-xs md:text-sm leading-tight"
+                            style={{ backgroundColor: employeePosition % 2 === 0 ? '#ffffff' : '#f1f5f9' }}
+                        >
                             {employee.name}
                             <Badge variant="secondary" className="ml-2">{getAppointmentsForDay(day, employee.id).filter(a => a.status !== 'cancelled').length}</Badge>
                         </div>
                     ))}
                 </div>
             </div>
-            <ScrollArea className="w-full whitespace-nowrap" style={{ height: '68vh' }}>
-                <div className="relative flex" style={{ height: totalHours * hourHeight }}>
-                    <div className="sticky left-0 bg-card/80 backdrop-blur-sm z-20 w-16 md:w-20 text-right pr-2 border-r">
-                        {timeSlots.map((time) => {
-                            return (
-                                <div key={time} className="relative text-base text-muted-foreground" style={{ height: rowHeight }}>
-                                    <div className="absolute right-0 -translate-y-1/2 pr-2">
-                                        {time}
+            <ScrollArea className="w-full whitespace-nowrap" style={{ height: '64vh' }}>
+                <div className="relative flex min-w-full" style={{ height: totalHours * hourHeight + timelineTopOffset }}>
+                    {hoveredRow && (
+                        <div
+                            className="absolute left-0 right-0 pointer-events-none z-[15]"
+                            style={{
+                                top: hoveredRow.top,
+                                height: hoveredRow.height,
+                                background: 'hsl(220 90% 56% / 0.18)',
+                                borderTop: '2px solid hsl(220 90% 50% / 0.7)',
+                                borderBottom: '2px solid hsl(220 90% 50% / 0.7)',
+                                boxShadow: '0 0 12px hsl(220 90% 56% / 0.15)',
+                            }}
+                        />
+                    )}
+                    <div
+                        className="sticky left-0 bg-card/90 backdrop-blur-sm z-20 flex w-24 md:w-28 border-r"
+                        style={{ paddingTop: timelineTopOffset }}
+                    >
+                        <div className="relative w-12 md:w-14 border-r bg-slate-100/90">
+                            {timeSlots.map((time, index) => {
+                                const [hours, minutes] = time.split(':').map(Number);
+                                if (minutes !== 0) {
+                                    return null;
+                                }
+
+                                return (
+                                    <div
+                                        key={`hour-${time}`}
+                                        className="absolute inset-x-0 border-t border-slate-300/90 px-2 pt-1 text-slate-800"
+                                        style={{ top: index * rowHeight + timelineTopOffset, height: hourHeight }}
+                                    >
+                                        <div className="text-[22px] font-semibold leading-none tracking-tight md:text-2xl">
+                                            {String(hours).padStart(2, '0')}
+                                        </div>
+                                        <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                            hs
+                                        </div>
                                     </div>
-                                </div>
-                            )
-                        })}
+                                );
+                            })}
+                        </div>
+                        <div className="relative flex-1 bg-slate-800 text-[10px] font-semibold text-slate-100 md:text-[11px]">
+                            {timeSlots.map((time, index) => {
+                                const [, minutes] = time.split(':').map(Number);
+
+                                return (
+                                    <div
+                                        key={`minute-${time}`}
+                                        className="absolute inset-x-0 border-t border-slate-600/70 px-1.5"
+                                        style={{ top: index * rowHeight + timelineTopOffset, height: rowHeight }}
+                                    >
+                                        <div className="-translate-y-1/2">
+                                            :{String(minutes).padStart(2, '0')}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     <div className="grid flex-1" style={{ gridTemplateColumns: employeeGridTemplate }}>
                         {nowIndicatorTop > 0 && (
                             <div
                                 ref={timeIndicatorRef}
-                                className="absolute right-0 h-0.5 bg-red-500 z-40"
+                                className="agenda-now-indicator absolute right-0 h-0.5 bg-red-500 z-40"
                                 style={{ top: nowIndicatorTop, left: 0 }}
                             >
                                 <div className="absolute -left-1 md:-left-2 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500"></div>
                             </div>
                         )}
-                        {visibleEmployees.map((employee) => {
+                        {visibleEmployees.map((employee, employeePosition) => {
                             const dailyAppointments = getAppointmentsForDay(day, employee.id);
+                            const employeeHue = (employeePosition * 39 + 18) % 360;
                             
                             return (
-                                <div key={employee.id} className="border-l relative min-w-[130px] md:min-w-[150px]">
+                                <div
+                                    key={employee.id}
+                                    className="agenda-employee-column border-l relative min-w-[130px] md:min-w-[150px]"
+                                    style={{ backgroundColor: employeePosition % 2 === 0 ? '#ffffff' : '#f1f5f9' }}
+                                >
                                     {timeSlots.map((time, index) => {
                                         const [, m] = time.split(':').map(Number);
                                         const rowClass = m === 0
-                                            ? 'border-border/70'
+                                            ? 'border-slate-700/80'
                                             : m === 30
-                                                ? 'border-border/50 border-dashed'
-                                                : 'border-border/30 border-dotted';
+                                                ? 'border-slate-600/70 border-dashed'
+                                                : 'border-slate-500/55 border-dotted';
 
                                         const isHover = !!dragState && hoverSlot?.time === time && hoverSlot?.employeeId === employee.id;
                                         return (
                                         <div
                                             key={time}
                                             className={cn(
-                                                "absolute w-full border-t transition-colors",
+                                                "agenda-slot-line absolute w-full border-t transition-colors",
                                                 canManageAgenda && !dragState && "cursor-pointer hover:bg-secondary/60",
                                                 isHover && "bg-primary/15",
                                                 rowClass
                                             )}
-                                            style={{ top: index * rowHeight, height: rowHeight }}
+                                            style={{ top: index * rowHeight + timelineTopOffset, height: rowHeight }}
                                             onClick={() => canManageAgenda && !dragState && handleNewAppointment(day, time, employee.id)}
                                             onDragOver={dragState ? (e) => { e.preventDefault(); setHoverSlot({ time, employeeId: employee.id }); } : undefined}
                                             onDragLeave={dragState ? () => setHoverSlot(null) : undefined}
@@ -341,7 +370,8 @@ function DayView({
                                                 const empName = allEmployees.find(e2 => e2.id === employee.id)?.name ?? employee.id;
                                                 setPendingMove({ drag: dragState, newTime: time, newEmployeeId: employee.id, newEmployeeName: empName });
                                             } : undefined}
-                                        ></div>
+                                        >
+                                        </div>
                                     )})}
 
                                     {(() => {
@@ -383,11 +413,12 @@ function DayView({
                                                                 <TooltipTrigger asChild>
                                                                     <div
                                                                         className={cn(
-                                                                            "absolute rounded-xl cursor-pointer z-10 overflow-hidden border-l-4 border shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20",
+                                                                            "agenda-appointment-card absolute rounded-xl cursor-pointer z-10 overflow-hidden border-l-4 border shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20",
                                                                             appointmentColorClasses.card,
                                                                             canManageAgenda && "cursor-grab active:cursor-grabbing"
                                                                         )}
-                                                                        style={{ top, height: visualHeight, left: colLeft, width: colWidth }}
+                                                                        style={{ top, height: visualHeight, left: colLeft, width: colWidth, ['--employee-hue' as string]: employeeHue }}
+                                                                        data-status={currentStatus}
                                                                         draggable={canManageAgenda}
                                                                         onDragStart={canManageAgenda ? (e) => {
                                                                             e.stopPropagation();
@@ -402,19 +433,14 @@ function DayView({
                                                                             });
                                                                         } : undefined}
                                                                         onDragEnd={() => { setDragState(null); setHoverSlot(null); }}
+                                                                        onMouseEnter={() => setHoveredRow({ top, height: visualHeight })}
+                                                                        onMouseLeave={() => setHoveredRow(null)}
                                                                         onClick={() => handleEditAppointment(appt)}
                                                                     >
-                                                                        <div className="px-2 py-1.5 md:px-2.5 md:py-2 space-y-1">
-                                                                            <div className="flex items-start justify-between gap-2">
-                                                                                <p className="font-semibold text-xs md:text-sm truncate">{appt.customerName}</p>
-                                                                                <span className={cn(
-                                                                                    "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                                                                                    appointmentColorClasses.pill
-                                                                                )}>
-                                                                                    {statusLabels[currentStatus]}
-                                                                                </span>
-                                                                            </div>
-                                                                            <p className="text-[11px] md:text-xs truncate">{serviceName}</p>
+                                                                        <div className="px-2 py-1 md:px-2.5 md:py-1.5 space-y-0.5 min-w-0">
+                                                                            <p className="font-semibold text-[10px] md:text-xs leading-snug text-current truncate">{appt.customerName}</p>
+                                                                            <p className="text-[9px] md:text-[10px] font-medium leading-tight text-current opacity-90 truncate">{serviceName}</p>
+                                                                            <p className="text-[8px] md:text-[9px] font-medium text-current opacity-75">{assignment.duration} min</p>
                                                                         </div>
                                                                     </div>
                                                                 </TooltipTrigger>
@@ -534,10 +560,9 @@ export default function AgendaPage() {
   const canImportExport = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente';
 
   useEffect(() => {
-      // Peluqueros can now see the full agenda, so we don't set a default filter for them.
-      // if (isHairdresser && currentUser?.id) {
-      //     setEmployeeFilter(currentUser.id);
-      // }
+      if (isHairdresser && currentUser?.id) {
+          setEmployeeFilter(currentUser.id);
+      }
   }, [isHairdresser, currentUser]);
 
     const getAppointmentsForDay = (day: Date, employeeId?: string) => {
@@ -565,7 +590,6 @@ export default function AgendaPage() {
     
     return appointmentsToFilter
       .filter(appt => isSameDay(new Date(appt.date), day))
-            .filter(appt => appt.status !== 'no-show')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
 
@@ -597,10 +621,17 @@ export default function AgendaPage() {
   }, [appointments, date, employeeFilter]);
 
     const getAppointmentColorClasses = (appointment: Appointment, day: Date) => {
-        if (appointment.status === 'cancelled') {
+        if (appointment.status === 'completed' || appointment.status === 'facturado') {
             return {
-                card: 'bg-red-100 text-red-900 border-red-500',
-                pill: 'bg-red-200 text-red-900'
+                card: 'bg-emerald-200 text-emerald-900 border-emerald-400 border-l-emerald-600',
+                pill: 'bg-emerald-300 text-emerald-900'
+            };
+        }
+
+        if (appointment.status === 'cancelled' || appointment.status === 'no-show') {
+            return {
+                card: 'bg-rose-200 text-rose-900 border-rose-400 border-l-rose-600',
+                pill: 'bg-rose-300 text-rose-900'
             };
         }
 
@@ -614,14 +645,14 @@ export default function AgendaPage() {
 
         if (isMultiEmployee || clientAppointmentsSameDay >= 2) {
             return {
-                card: 'bg-yellow-100 text-yellow-900 border-yellow-500',
-                pill: 'bg-yellow-200 text-yellow-900'
+                card: 'bg-amber-200 text-amber-900 border-amber-400 border-l-amber-600',
+                pill: 'bg-amber-300 text-amber-900'
             };
         }
 
         return {
-            card: 'bg-blue-100 text-blue-900 border-blue-500',
-            pill: 'bg-blue-200 text-blue-900'
+            card: 'bg-indigo-200 text-indigo-900 border-indigo-400 border-l-indigo-600',
+            pill: 'bg-indigo-300 text-indigo-900'
         };
     };
 
@@ -641,13 +672,13 @@ export default function AgendaPage() {
       setAppointments(updated);
       toast({ title: 'Turno movido', description: `El turno fue actualizado correctamente.` });
   };
-  
-  const handleOpenDayModal = (day: Date) => {
-    const dayAppointments = getAppointmentsForDay(day);
-    setDayModalAppointments(dayAppointments);
-    setDayModalDate(day);
-    setIsDayModalOpen(true);
-  }
+
+    const handleOpenDayModal = (day: Date) => {
+        const dayAppointments = getAppointmentsForDay(day);
+        setDayModalAppointments(dayAppointments);
+        setDayModalDate(day);
+        setIsDayModalOpen(true);
+    }
 
   const handleCloseDayModal = () => {
     setIsDayModalOpen(false);
@@ -807,25 +838,25 @@ export default function AgendaPage() {
                 clientPhone={historyClient?.mobilePhone}
       />
       <input type="file" ref={importInputRef} className="hidden" onChange={handleFileImport} accept=".csv" />
-      <div className="space-y-6">
+      <div className="salon-shell space-y-4 md:space-y-5">
         <Tabs defaultValue="dia">
           <div className="flex justify-center mb-4">
-              <TabsList className="grid w-full max-w-md grid-cols-3">
-                  <TabsTrigger value="dia">Día</TabsTrigger>
-                  <TabsTrigger value="semana">Semana</TabsTrigger>
-                  <TabsTrigger value="mes">Mes</TabsTrigger>
+              <TabsList className="agenda-tabs-list grid w-full max-w-md grid-cols-3">
+                  <TabsTrigger className="agenda-tabs-trigger" value="dia">Día</TabsTrigger>
+                  <TabsTrigger className="agenda-tabs-trigger" value="semana">Semana</TabsTrigger>
+                  <TabsTrigger className="agenda-tabs-trigger" value="mes">Mes</TabsTrigger>
               </TabsList>
           </div>
           <TabsContent value="dia">
-              <Card>
-                  <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <Card className="agenda-panel agenda-panel--timeline">
+                  <CardHeader className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
                       <div className="space-y-1.5">
                         <CardTitle>Agenda del Día: {format(date, "EEEE d 'de' MMMM", { locale: es })}</CardTitle>
                          <CardDescription>
                           {(employeeFilter !== 'todos' && !isHairdresser) ? `Mostrando agenda para ${visibleEmployees[0]?.name}.` : 'Mostrando todos los empleados.'}
                         </CardDescription>
                       </div>
-                      <div className="flex w-full md:w-auto flex-col sm:flex-row gap-2">
+                      <div className="flex w-full lg:w-auto flex-col sm:flex-row gap-2">
                         {canManageAgenda && 
                             <Button asChild>
                                 <Link href={`/admin/appointments/new?date=${date.toISOString().split('T')[0]}`}>
@@ -871,7 +902,7 @@ export default function AgendaPage() {
               </Card>
           </TabsContent>
           <TabsContent value="semana">
-               <Card>
+            <Card className="agenda-panel">
                   <CardHeader>
                       <CardTitle>Agenda de la Semana</CardTitle>
                       <CardDescription>{format(startOfWeek(date, {locale: es}), "PPP", {locale: es})} - {format(endOfWeek(date, {locale:es}), "PPP", {locale:es})}</CardDescription>
@@ -882,7 +913,7 @@ export default function AgendaPage() {
                </Card>
           </TabsContent>
           <TabsContent value="mes">
-              <Card>
+              <Card className="agenda-panel">
                   <CardHeader>
                       <CardTitle>Agenda del Mes: {format(date, "MMMM yyyy", { locale: es })}</CardTitle>
                   </CardHeader>
@@ -893,13 +924,17 @@ export default function AgendaPage() {
           </TabsContent>
         </Tabs>
 
-        <Card>
+        <Card className="agenda-panel">
           <CardHeader>
-            <CardTitle>Agenda de Recepción</CardTitle>
-            <CardDescription>Visualiza y gestiona los turnos. Utiliza los filtros para organizar la vista.</CardDescription>
+            <CardTitle>{isHairdresser ? 'Configuración de Vista' : 'Agenda de Recepción'}</CardTitle>
+            <CardDescription>
+              {isHairdresser
+                ? 'Ajustá tu vista diaria para trabajar cómodo desde tablet.'
+                : 'Visualiza y gestiona los turnos. Utiliza los filtros para organizar la vista.'}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-                            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                            <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3">
                                     <div className="flex items-center gap-2 shrink-0">
                       <Filter className="h-5 w-5 text-muted-foreground" />
                       <Label>Filtrar por:</Label>
@@ -920,7 +955,7 @@ export default function AgendaPage() {
                                             </PopoverContent>
                                         </Popover>
                     
-                                            <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
+                                            <Select value={employeeFilter} onValueChange={setEmployeeFilter} disabled={isHairdresser}>
                                                     <SelectTrigger className="w-full">
                                                             <SelectValue placeholder="Filtrar por empleado..." />
                                                     </SelectTrigger>
@@ -946,12 +981,12 @@ export default function AgendaPage() {
                         </div>
                     )}
               </div>
-                            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 border-t pt-4">
+                            <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3 border-t pt-3">
                                 <div className="flex items-center gap-2 shrink-0">
                     <Clock className="h-5 w-5 text-muted-foreground" />
                     <Label>Vista diaria:</Label>
                 </div>
-                                <div className='w-full md:w-auto grid grid-cols-1 sm:grid-cols-3 gap-2'>
+                                <div className='w-full lg:w-auto grid grid-cols-1 sm:grid-cols-3 gap-2'>
                     <Select value={String(startHour)} onValueChange={(v) => setStartHour(Number(v))}>
                     <SelectTrigger className="w-full">
                         <SelectValue />

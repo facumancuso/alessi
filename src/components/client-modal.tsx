@@ -1,7 +1,7 @@
 
 'use client';
 import { useEffect, useState, useTransition } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -124,13 +124,15 @@ export function ClientModal({ isOpen, onClose, client }: ClientModalProps) {
     });
   }
 
-  if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{client ? `Editar Cliente: ${client.name}` : 'Nuevo Cliente'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {client ? 'Formulario para editar los datos del cliente' : 'Formulario para crear un nuevo cliente'}
+          </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="main">
           <TabsList className="grid w-full grid-cols-2">

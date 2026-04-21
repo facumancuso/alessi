@@ -4,26 +4,57 @@
 
 @layer base {
   :root {
-    --background: 340 100% 97%;
-    --foreground: 340 10% 20%;
-    --card: 340 100% 100%;
-    --card-foreground: 340 10% 20%;
-    --popover: 340 100% 100%;
-    --popover-foreground: 340 10% 20%;
-    --primary: 340 82% 56%;
-    --primary-foreground: 340 100% 98%;
-    --secondary: 340 20% 92%;
-    --secondary-foreground: 340 82% 56%;
-    --muted: 340 20% 92%;
-    --muted-foreground: 340 10% 45%;
-    --accent: 340 90% 65%;
-    --accent-foreground: 340 10% 15%;
+    --background: 336 100% 98%;
+    --foreground: 340 10% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 340 10% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 340 10% 12%;
+    --primary: 338 82% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 340 33% 94%;
+    --secondary-foreground: 340 16% 26%;
+    --muted: 340 28% 95%;
+    --muted-foreground: 340 10% 41%;
+    --accent: 336 88% 64%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 340 20% 88%;
-    --input: 340 20% 90%;
-    --ring: 340 82% 56%;
-    --radius: 0.5rem;
+    --border: 340 26% 87%;
+    --input: 340 31% 91%;
+    --ring: 338 82% 56%;
+    --radius: 0.95rem;
+
+    --surface-soft: 334 56% 97%;
+    --surface-strong: 336 54% 92%;
+    --line-soft: 340 22% 88%;
+    --line-strong: 340 28% 79%;
+    --timeline-now: 338 86% 54%;
+    --status-confirmed: 338 74% 50%;
+    --status-waiting: 37 95% 49%;
+    --status-in-progress: 342 77% 58%;
+    --status-completed: 157 47% 39%;
+    --status-cancelled: 0 80% 56%;
+    --status-no-show: 340 6% 45%;
+    --status-billed: 225 72% 57%;
+
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+
+    --radius-sm: 0.65rem;
+    --radius-md: 0.95rem;
+    --radius-lg: 1.3rem;
+
+    --shadow-soft: 0 10px 24px -16px hsl(338 30% 29% / 0.18);
+    --shadow-card: 0 18px 36px -22px hsl(338 33% 26% / 0.24);
+    --shadow-press: 0 10px 18px -12px hsl(338 45% 33% / 0.42);
+    --flow-glow: 0 0 0 1px hsl(var(--timeline-now) / 0.23), 0 0 22px -8px hsl(var(--timeline-now) / 0.4);
 
     --sidebar-background: var(--card);
     --sidebar-foreground: var(--card-foreground);
@@ -36,25 +67,25 @@
   }
 
   .dark {
-    --background: 340 10% 8%;
-    --foreground: 340 10% 95%;
-    --card: 340 10% 8%;
-    --card-foreground: 340 10% 95%;
-    --popover: 340 10% 8%;
-    --popover-foreground: 340 10% 95%;
-    --primary: 340 82% 60%;
-    --primary-foreground: 340 10% 15%;
-    --secondary: 340 10% 15%;
-    --secondary-foreground: 340 10% 95%;
-    --muted: 340 10% 15%;
-    --muted-foreground: 340 10% 60%;
-    --accent: 340 82% 56%;
-    --accent-foreground: 340 10% 95%;
+    --background: 339 12% 9%;
+    --foreground: 0 0% 96%;
+    --card: 339 11% 12%;
+    --card-foreground: 0 0% 96%;
+    --popover: 339 11% 12%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 338 86% 63%;
+    --primary-foreground: 340 22% 12%;
+    --secondary: 339 10% 18%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 339 8% 19%;
+    --muted-foreground: 339 8% 74%;
+    --accent: 338 86% 63%;
+    --accent-foreground: 340 22% 12%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 340 10% 15%;
-    --input: 340 10% 15%;
-    --ring: 340 82% 60%;
+    --border: 339 10% 24%;
+    --input: 339 10% 21%;
+    --ring: 338 86% 63%;
     
     --sidebar-background: var(--card);
     --sidebar-foreground: var(--card-foreground);
@@ -71,8 +102,291 @@
   * {
     @apply border-border;
   }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', sans-serif;
+    background-image:
+      radial-gradient(circle at 5% 0%, hsl(334 92% 92% / 0.62), transparent 36%),
+      radial-gradient(circle at 100% 100%, hsl(340 52% 88% / 0.42), transparent 45%),
+      linear-gradient(165deg, hsl(var(--background)), hsl(var(--surface-soft)));
+    background-attachment: fixed;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  .font-headline {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    letter-spacing: -0.015em;
+  }
+
+  button,
+  [role='button'] {
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 220ms ease, transform 140ms ease;
+  }
+
+  input,
+  textarea,
+  [data-radix-select-trigger],
+  [role='combobox'] {
+    border-radius: var(--radius-sm);
+    border-color: hsl(var(--line-soft));
+    background-color: hsl(var(--card));
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.78), 0 1px 2px hsl(340 25% 20% / 0.04);
+    transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+  }
+
+  input:focus-visible,
+  textarea:focus-visible,
+  [data-radix-select-trigger]:focus-visible,
+  [role='combobox']:focus-visible {
+    border-color: hsl(var(--primary) / 0.65);
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2);
+    outline: none;
+  }
+}
+
+@layer components {
+  .salon-shell {
+    position: relative;
+  }
+
+  .salon-shell::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: calc(var(--radius-lg) + 6px);
+    background: linear-gradient(140deg, hsl(338 82% 56% / 0.07), hsl(0 0% 0% / 0.035));
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .agenda-panel,
+  .myday-panel {
+    border-radius: var(--radius-lg);
+    border-color: hsl(var(--line-soft));
+    background: hsl(0 0% 100% / 0.82);
+    backdrop-filter: blur(12px) saturate(1.1);
+    box-shadow: var(--shadow-soft);
+    overflow: hidden;
+  }
+
+  .agenda-panel--timeline {
+    border: 1px solid hsl(var(--line-soft));
+    box-shadow: var(--shadow-card);
+  }
+
+  .agenda-tabs-list {
+    border-radius: 999px;
+    border: 1px solid hsl(var(--line-soft));
+    background: hsl(0 0% 100% / 0.66);
+    backdrop-filter: blur(12px);
+    padding: 0.3rem;
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.7);
+  }
+
+  .agenda-tabs-trigger {
+    border-radius: 999px;
+    font-weight: 600;
+  }
+
+  .agenda-tabs-trigger[data-state='active'] {
+    background: linear-gradient(155deg, hsl(var(--primary)), hsl(var(--accent)));
+    color: hsl(var(--foreground));
+    color: hsl(var(--primary-foreground));
+    box-shadow: var(--shadow-soft);
+  }
+
+  .agenda-dayview {
+    background: linear-gradient(180deg, hsl(0 0% 100% / 0.85), hsl(340 35% 96%));
+  }
+
+  .agenda-day-summary {
+    background: linear-gradient(135deg, hsl(338 85% 57% / 0.08), hsl(280 76% 50% / 0.04));
+    border-bottom: 2px solid hsl(338 82% 56% / 0.2);
+  }
+
+  .agenda-employee-header {
+    border-top: 2px solid hsl(338 82% 56% / 0.3);
+    border-bottom: 3px solid hsl(340 20% 80%);
+    background: linear-gradient(180deg, hsl(0 0% 100% / 0.96), hsl(340 25% 98%));
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .agenda-employee-column {
+    position: relative;
+    border-right: 1px solid hsl(215 20% 88%);
+  }
+
+  .agenda-slot-line {
+    transition: background-color 130ms ease;
+  }
+
+  .agenda-now-indicator {
+    height: 2px;
+    background: linear-gradient(90deg, hsl(var(--timeline-now)) 0%, hsl(var(--timeline-now) / 0.32) 100%);
+    box-shadow: var(--flow-glow);
+    animation: nowBeam 2.4s ease-in-out infinite;
+  }
+
+  .agenda-now-indicator::after {
+    content: 'Ahora';
+    position: absolute;
+    right: 8px;
+    top: -16px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: hsl(var(--timeline-now));
+    text-transform: uppercase;
+  }
+
+  .agenda-appointment-card {
+    border-radius: var(--radius-md);
+    border-width: 1px;
+    border-left-width: 4px;
+    box-shadow: 0 2px 8px -2px hsl(0 0% 0% / 0.10), 0 1px 2px hsl(0 0% 0% / 0.06);
+    transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease;
+    animation: cardIn 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .agenda-appointment-card:hover {
+    transform: translateY(-2px) scale(1.012);
+    box-shadow: 0 6px 20px -4px hsl(0 0% 0% / 0.14), 0 2px 6px hsl(0 0% 0% / 0.08);
+  }
+
+  .agenda-appointment-card:active {
+    transform: translateY(-1px) scale(1.005);
+    box-shadow: 0 3px 10px -3px hsl(0 0% 0% / 0.10);
+  }
+
+  .agenda-appointment-card[data-status='waiting'] {
+    animation: cardIn 360ms cubic-bezier(0.34, 1.56, 0.64, 1), waitingPulse 1.8s ease-in-out infinite;
+  }
+
+  .agenda-status-pill {
+    border: 1px solid hsl(0 0% 100% / 0.55);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.7);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .myday-table [data-slot='table-header'] {
+    background: linear-gradient(180deg, hsl(var(--surface-soft)), hsl(var(--card)));
+  }
+
+  .myday-row {
+    transition: background-color 140ms ease, transform 140ms ease;
+  }
+
+  .myday-row:hover {
+    background-color: hsl(var(--surface-soft));
+  }
+
+  [data-sidebar='sidebar'] {
+    border-right: 1px solid hsl(var(--line-soft));
+    background: linear-gradient(180deg, hsl(0 0% 100% / 0.88), hsl(334 58% 95% / 0.8));
+    backdrop-filter: blur(12px) saturate(1.15);
+  }
+
+  [data-sidebar='menu-button'] {
+    border-radius: var(--radius-sm);
+  }
+
+  [data-sidebar='menu-button'][data-active='true'] {
+    background: linear-gradient(125deg, hsl(338 82% 56% / 0.24), hsl(338 82% 56% / 0.14));
+    box-shadow: inset 0 0 0 1px hsl(var(--line-strong) / 0.65);
+  }
+
+  .ios-pill,
+  .agenda-status-pill {
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+  }
+}
+
+@layer utilities {
+  .stagger-enter > * {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: cardIn 240ms ease forwards;
+  }
+
+  .stagger-enter > *:nth-child(2) { animation-delay: 40ms; }
+  .stagger-enter > *:nth-child(3) { animation-delay: 80ms; }
+  .stagger-enter > *:nth-child(4) { animation-delay: 120ms; }
+}
+
+@media (max-width: 767px) {
+  .agenda-day-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .myday-table [data-slot='table-header'] {
+    display: none;
+  }
+
+  .myday-table [data-slot='table-row'] {
+    display: grid;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+    border: 1px solid hsl(var(--line-soft));
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    background: hsl(var(--card));
+    box-shadow: var(--shadow-soft);
+  }
+
+  .myday-table [data-slot='table-cell'] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    border-bottom: 1px dashed hsl(var(--line-soft));
+    padding: 0 0 0.45rem;
+  }
+
+  .myday-table [data-slot='table-cell']:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92) rotateX(8deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotateX(0);
+  }
+}
+
+@keyframes waitingPulse {
+  0%,
+  100% {
+    box-shadow: 0 12px 28px -12px hsl(39 96% 49% / 0.18), inset 0 1px 0 hsl(0 0% 100%);
+  }
+  50% {
+    box-shadow: 0 12px 28px -12px hsl(39 96% 49% / 0.42), 0 0 32px -6px hsl(39 96% 49% / 0.48), inset 0 1px 0 hsl(0 0% 100%);
+  }
+}
+
+@keyframes nowBeam {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
   }
 }
 

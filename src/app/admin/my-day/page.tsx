@@ -1,44 +1,125 @@
 
 'use client';
-import { useState, useEffect, useRef, useTransition } from 'react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { getAppointments, getClientByEmail } from '@/lib/data';
-import type { Appointment, Client } from '@/lib/types';
+import { useState, useEffect, useRef, useTransition, useMemo } from 'react';
+import { getAppointments, getClientByEmail, getProducts, getServices, getUsers } from '@/lib/data';
+import type { Appointment, AppointmentAssignment, Client, Product, Service, User as AppUser } from '@/lib/types';
 import { isToday, format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Clock, History, Briefcase, Loader2 } from 'lucide-react';
-import { ClientHistoryModal } from '@/components/client-history-modal';
+import {
+  Clock, Loader2, FileText,
+  Scissors, CheckCircle2, PlayCircle, Edit2, Save, Package,
+  Calendar, AlertCircle, MessageSquare, ChevronRight, Hash, ImageOff,
+  User,
+} from 'lucide-react';
 import { useCurrentUser } from '../user-context';
 import { Button } from '@/components/ui/button';
-import Link from 'next/link';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { updateAssignmentStatus } from '@/lib/actions';
+import { updateAssignmentStatus, updateAppointment } from '@/lib/actions';
+import { cn } from '@/lib/utils';
+import Link from 'next/link';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getStatusInfo(status: Appointment['status']) {
+  const map: Record<string, { label: string; color: string }> = {
+    confirmed:   { label: 'Confirmado',  color: 'bg-sky-100 text-sky-700 border-sky-200' },
+    waiting:     { label: 'En Espera',   color: 'bg-amber-100 text-amber-700 border-amber-200' },
+    in_progress: { label: 'En Atención', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+    completed:   { label: 'Completado',  color: 'bg-slate-100 text-slate-600 border-slate-200' },
+    cancelled:   { label: 'Cancelado',   color: 'bg-rose-100 text-rose-700 border-rose-200' },
+    'no-show':   { label: 'No asistió',  color: 'bg-rose-100 text-rose-700 border-rose-200' },
+    facturado:   { label: 'Facturado',   color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  };
+  return map[status] ?? { label: status, color: 'bg-slate-100 text-slate-600 border-slate-200' };
+}
+
+function getClientPhotoUrl(client: Client | null) {
+  if (!client) return null;
+  const maybe = client as unknown as Record<string, unknown>;
+  const candidates = ['photoUrl', 'avatarUrl', 'imageUrl', 'profileImage', 'profilePicture', 'photo'];
+  for (const key of candidates) {
+    const value = maybe[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function ClientAvatar({
+  name,
+  photoUrl,
+  size = 'md',
+}: {
+  name: string;
+  photoUrl?: string | null;
+  size?: 'sm' | 'md' | 'lg';
+}) {
+  const sizeClasses = {
+    sm: 'h-9 w-9 text-sm',
+    md: 'h-14 w-14 text-xl',
+    lg: 'h-16 w-16 text-2xl',
+  };
+  const iconSize = size === 'lg' ? 'h-8 w-8' : size === 'md' ? 'h-7 w-7' : 'h-4 w-4';
+
+  if (photoUrl) {
+    return (
+      <div className={cn('relative overflow-hidden rounded-full border border-border/60 bg-muted shrink-0', sizeClasses[size])}>
+        <img
+          src={photoUrl}
+          alt={`Foto de ${name}`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+            const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+            if (fallback) fallback.style.display = 'flex';
+          }}
+        />
+        <div className="absolute inset-0 hidden items-center justify-center bg-slate-700 text-white" aria-hidden>
+          <User className={cn('opacity-95', iconSize)} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn(
+      'rounded-full bg-slate-700 text-white font-bold flex items-center justify-center shrink-0 select-none',
+      sizeClasses[size]
+    )}>
+      <User className={cn('opacity-95', iconSize)} />
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MyDayPage() {
   const { currentUser } = useCurrentUser();
   const { toast } = useToast();
+  const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
   const [dailyAppointments, setDailyAppointments] = useState<Appointment[]>([]);
+  const [selectedApptId, setSelectedApptId] = useState<string | null>(null);
+  const [clientData, setClientData] = useState<Client | null>(null);
+  const [clientHistory, setClientHistory] = useState<Appointment[]>([]);
+  const [upcomingVisits, setUpcomingVisits] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [historyAppointments, setHistoryAppointments] = useState<Appointment[]>([]);
-  const [historyClient, setHistoryClient] = useState<Client | null>(null);
+  const [loadingClient, setLoadingClient] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const previousStatusesRef = useRef<Map<string, Appointment['status']>>(new Map());
   const [isPending, startTransition] = useTransition();
+  const [notes, setNotes] = useState('');
+  const [allServices, setAllServices] = useState<Service[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [employees, setEmployees] = useState<AppUser[]>([]);
+  const [isEditingTurn, setIsEditingTurn] = useState(false);
+  const [draftAssignments, setDraftAssignments] = useState<AppointmentAssignment[]>([]);
+  const [initialAssignmentsCount, setInitialAssignmentsCount] = useState(0);
 
   useEffect(() => {
     const fetchAppointments = async (showLoader = false) => {
@@ -49,18 +130,15 @@ export default function MyDayPage() {
       }
 
       try {
-        // We get ALL appointments from the data source
-        const allAppointments = await getAppointments();
+        const all = await getAppointments();
         
-        // Then we filter them on the client-side
-        const todayAppointments = allAppointments
+        const todayAppointments = all
           .filter(appt => 
             (appt.assignments || []).some(a => a.employeeId === currentUser.id) && 
             isToday(new Date(appt.date)) &&
             appt.status !== 'cancelled'
           )
           .sort((a, b) => {
-            // Get the employee's specific time for each appointment
             const getEmployeeTime = (appt: Appointment) => {
               const myAssignment = (appt.assignments || []).find(a => a.employeeId === currentUser.id);
               if (myAssignment?.time) {
@@ -68,7 +146,6 @@ export default function MyDayPage() {
               }
               return new Date(appt.date).getTime();
             };
-            
             return getEmployeeTime(a) - getEmployeeTime(b);
           });
 
@@ -81,7 +158,6 @@ export default function MyDayPage() {
               title: 'Cliente en espera',
               description: `${appt.customerName} llegó y está esperando atención.`,
             });
-
             if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
               new Notification('Cliente en espera', {
                 body: `${appt.customerName} está en espera (${format(new Date(appt.date), 'p', { locale: es })}).`,
@@ -91,15 +167,22 @@ export default function MyDayPage() {
         });
 
         previousStatusesRef.current = new Map(todayAppointments.map(appt => [appt.id, appt.status]));
-        
+        setAllAppointments(all);
         setDailyAppointments(todayAppointments);
+
+        // Auto-select: prefer in_progress → waiting → first
+        setSelectedApptId(prev => {
+          if (prev) return prev;
+          const auto = todayAppointments.find(a => a.status === 'in_progress')
+            ?? todayAppointments.find(a => a.status === 'waiting')
+            ?? todayAppointments[0];
+          return auto?.id ?? null;
+        });
       } catch (error) {
-        console.error("Failed to fetch appointments:", error);
+        console.error('Failed to fetch appointments:', error);
         setDailyAppointments([]);
       } finally {
-        if (showLoader) {
-          setLoading(false);
-        }
+        if (showLoader) setLoading(false);
       }
     };
 
@@ -107,225 +190,828 @@ export default function MyDayPage() {
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().catch(() => undefined);
       }
-
       fetchAppointments(true);
-      const interval = setInterval(() => {
-        fetchAppointments(false);
-      }, 15000);
-
+      const interval = setInterval(() => fetchAppointments(false), 15000);
       return () => clearInterval(interval);
     }
   }, [currentUser, toast]);
 
-  const refreshAppointments = async () => {
-    if (!currentUser) return;
-    try {
-      const allAppointments = await getAppointments();
-      const todayAppointments = allAppointments
-        .filter(appt =>
-          (appt.assignments || []).some(a => a.employeeId === currentUser.id) &&
-          isToday(new Date(appt.date)) &&
-          appt.status !== 'cancelled'
+  // Load client details when selection changes
+  useEffect(() => {
+    const appt = dailyAppointments.find(a => a.id === selectedApptId);
+    if (!appt) {
+      setClientData(null);
+      setClientHistory([]);
+      setUpcomingVisits([]);
+      return;
+    }
+    setLoadingClient(true);
+    getClientByEmail(appt.customerEmail)
+      .then(client => {
+        setClientData(client ?? null);
+        const appointmentsByClient = allAppointments
+          .filter(a => a.customerEmail === appt.customerEmail && a.id !== appt.id)
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        const currentTimestamp = new Date(appt.date).getTime();
+
+        const history = appointmentsByClient
+          .filter(a => new Date(a.date).getTime() < currentTimestamp)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .slice(0, 12);
+
+        const upcoming = appointmentsByClient
+          .filter(a => new Date(a.date).getTime() > currentTimestamp && a.status !== 'cancelled')
+          .slice(0, 6);
+
+        setClientHistory(history);
+        setUpcomingVisits(upcoming);
+      })
+      .finally(() => setLoadingClient(false));
+  }, [selectedApptId, allAppointments]);
+
+  const selectedAppt = useMemo(
+    () => dailyAppointments.find(a => a.id === selectedApptId) ?? null,
+    [dailyAppointments, selectedApptId]
+  );
+
+  const myAssignments = useMemo(
+    () => (selectedAppt?.assignments ?? [])
+      .map((a, idx) => ({ assignment: a, idx }))
+      .filter(({ assignment }) => assignment.employeeId === currentUser?.id),
+    [selectedAppt, currentUser]
+  );
+
+  const displayedAssignments = useMemo(
+    () => {
+      const source = isEditingTurn ? draftAssignments : (selectedAppt?.assignments ?? []);
+      if (isEditingTurn) {
+        return source.map((a, idx) => ({ assignment: a, idx }));
+      }
+      return source
+        .map((a, idx) => ({ assignment: a, idx }))
+        .filter(({ assignment }) => assignment.employeeId === currentUser?.id);
+    },
+    [isEditingTurn, draftAssignments, selectedAppt, currentUser]
+  );
+
+  useEffect(() => {
+    setNotes(selectedAppt?.notes ?? '');
+  }, [selectedAppt?.id, selectedAppt?.notes]);
+
+  useEffect(() => {
+    const loadCatalog = async () => {
+      setCatalogLoading(true);
+      try {
+        const [services, products, users] = await Promise.all([getServices(), getProducts(), getUsers()]);
+        setAllServices(services);
+        setAllProducts(products);
+        setEmployees(users.filter(u => u.role === 'Peluquero' && u.isActive));
+      } catch {
+        toast({
+          title: 'Error cargando catálogo',
+          description: 'No se pudieron cargar servicios y productos.',
+          variant: 'destructive',
+        });
+      } finally {
+        setCatalogLoading(false);
+      }
+    };
+    loadCatalog();
+  }, [toast]);
+
+  useEffect(() => {
+    setIsEditingTurn(false);
+    if (!selectedAppt) {
+      setDraftAssignments([]);
+      setInitialAssignmentsCount(0);
+      return;
+    }
+    const normalized = (selectedAppt.assignments ?? []).map(a => ({
+      ...a,
+      productIds: a.productIds ?? [],
+      status: a.status ?? 'pending',
+    }));
+    setDraftAssignments(normalized);
+    setInitialAssignmentsCount(normalized.length);
+  }, [selectedAppt?.id]);
+
+  const handleStatus = (status: 'pending' | 'in_progress' | 'completed') => {
+    if (!selectedAppt || !currentUser) return;
+    startTransition(async () => {
+      await updateAssignmentStatus(selectedAppt.id, currentUser.id, status);
+      // Refresh
+      const all = await getAppointments();
+      setAllAppointments(all);
+      const today = all
+        .filter(a =>
+          (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
+          isToday(new Date(a.date)) &&
+          a.status !== 'cancelled'
         )
         .sort((a, b) => {
-          // Get the employee's specific time for each appointment
-          const getEmployeeTime = (appt: Appointment) => {
-            const myAssignment = (appt.assignments || []).find(a => a.employeeId === currentUser.id);
-            if (myAssignment?.time) {
-              return new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${myAssignment.time}:00`).getTime();
-            }
-            return new Date(appt.date).getTime();
+          const t = (appt: Appointment) => {
+            const m = (appt.assignments ?? []).find(x => x.employeeId === currentUser.id);
+            return m?.time
+              ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${m.time}:00`).getTime()
+              : new Date(appt.date).getTime();
           };
-          
-          return getEmployeeTime(a) - getEmployeeTime(b);
+          return t(a) - t(b);
         });
-      setDailyAppointments(todayAppointments);
-    } catch (error) {
-      console.error("Failed to refresh appointments:", error);
-    }
-  };
-
-  const handleAssignmentStatus = (
-    appointmentId: string,
-    employeeId: string,
-    status: 'pending' | 'in_progress' | 'completed'
-  ) => {
-    startTransition(async () => {
-      await updateAssignmentStatus(appointmentId, employeeId, status);
-      await refreshAppointments();
+      setDailyAppointments(today);
     });
   };
 
-  const handleShowHistory = async (email: string) => {
-    const [clientAppointments, clientDetails] = await Promise.all([
-      getAppointments().then(apps => apps.filter(app => app.customerEmail === email)),
-      getClientByEmail(email)
-    ]);
-    setHistoryAppointments(clientAppointments);
-    setHistoryClient(clientDetails || null);
-    setIsHistoryModalOpen(true);
+  const handleSaveNotes = () => {
+    if (!selectedAppt) return;
+    startTransition(async () => {
+      try {
+        await updateAppointment(selectedAppt.id, { notes: notes.trim() || undefined });
+
+        setAllAppointments(prev => prev.map(a =>
+          a.id === selectedAppt.id ? { ...a, notes: notes.trim() || undefined } : a
+        ));
+        setDailyAppointments(prev => prev.map(a =>
+          a.id === selectedAppt.id ? { ...a, notes: notes.trim() || undefined } : a
+        ));
+
+        toast({
+          title: 'Notas guardadas',
+          description: 'Las notas del turno se actualizaron correctamente.',
+        });
+      } catch (error) {
+        toast({
+          title: 'Error al guardar notas',
+          description: 'No se pudieron guardar las notas.',
+          variant: 'destructive',
+        });
+      }
+    });
   };
 
-  const getStatusVariant = (status: Appointment['status']) => {
-    switch (status) {
-      case 'completed': return 'secondary';
-      case 'cancelled': return 'destructive';
-      case 'in_progress': return 'default';
-      case 'waiting': return 'default';
-      default: return 'outline';
+  const updateDraftAssignment = (index: number, field: keyof AppointmentAssignment, value: string | number) => {
+    setDraftAssignments(prev => {
+      const next = [...prev];
+      const updated = { ...next[index], [field]: value } as AppointmentAssignment;
+      if (field === 'serviceId') {
+        const service = allServices.find(s => s.id === value);
+        if (service) updated.duration = service.duration;
+      }
+      next[index] = updated;
+      return next;
+    });
+  };
+
+  const addProductToDraft = (index: number, productId: string) => {
+    if (!productId) return;
+    setDraftAssignments(prev => {
+      const next = [...prev];
+      const current = next[index];
+      const currentProductIds = current.productIds ?? [];
+      next[index] = { ...current, productIds: [...currentProductIds, productId] };
+      return next;
+    });
+  };
+
+  const removeProductFromDraft = (index: number, productPosition: number) => {
+    setDraftAssignments(prev => {
+      const next = [...prev];
+      const current = next[index];
+      const currentProductIds = current.productIds ?? [];
+      next[index] = {
+        ...current,
+        productIds: [...currentProductIds.slice(0, productPosition), ...currentProductIds.slice(productPosition + 1)],
+      };
+      return next;
+    });
+  };
+
+  const addDraftAssignment = () => {
+    if (!currentUser) return;
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    setDraftAssignments(prev => ([
+      ...prev,
+      {
+        employeeId: currentUser.id,
+        serviceId: '',
+        time: `${hh}:${mm}`,
+        duration: 30,
+        productIds: [],
+        status: 'pending',
+      },
+    ]));
+  };
+
+  const removeDraftAssignment = (index: number) => {
+    if (index < initialAssignmentsCount) return;
+    setDraftAssignments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const getEmployeeName = (employeeId?: string) => {
+    if (!employeeId) return 'Sin asignar';
+    return employees.find(e => e.id === employeeId)?.name ?? 'Profesional';
+  };
+
+  const handleSaveTurnEdits = () => {
+    if (!selectedAppt || !currentUser) return;
+
+    const addedDrafts = draftAssignments.filter((_, idx) => idx >= initialAssignmentsCount);
+    if (addedDrafts.some(a => !a.employeeId || !a.serviceId || !a.time || !a.duration)) {
+      toast({
+        title: 'Faltan datos',
+        description: 'Completá profesional, servicio, hora y duración para guardar cambios del turno.',
+        variant: 'destructive',
+      });
+      return;
     }
+
+    startTransition(async () => {
+      try {
+        const normalizedAssignments = draftAssignments.map(a => ({
+          ...a,
+          productIds: a.productIds ?? [],
+          status: a.status ?? 'pending',
+        }));
+
+        await updateAppointment(selectedAppt.id, {
+          assignments: normalizedAssignments,
+          productIds: normalizedAssignments.flatMap(a => a.productIds ?? []),
+        });
+
+        setAllAppointments(prev => prev.map(a =>
+          a.id === selectedAppt.id
+            ? { ...a, assignments: normalizedAssignments }
+            : a
+        ));
+        setDailyAppointments(prev => prev.map(a =>
+          a.id === selectedAppt.id
+            ? {
+                ...a,
+                assignments: normalizedAssignments,
+                serviceNames: normalizedAssignments.map(asg => allServices.find(s => s.id === asg.serviceId)?.name ?? 'Servicio'),
+              }
+            : a
+        ));
+
+        setIsEditingTurn(false);
+        toast({
+          title: 'Turno actualizado',
+          description: 'Se guardaron los cambios de servicios/productos/horarios.',
+        });
+      } catch {
+        toast({
+          title: 'Error al actualizar turno',
+          description: 'No se pudieron guardar los cambios del turno.',
+          variant: 'destructive',
+        });
+      }
+    });
+  };
+
+  // ── Derived display values ────────────────────────────────────────────────
+  const myTime = myAssignments[0]?.assignment?.time;
+  const displayDate = myTime && selectedAppt
+    ? new Date(`${format(new Date(selectedAppt.date), 'yyyy-MM-dd')}T${myTime}:00`)
+    : selectedAppt ? new Date(selectedAppt.date) : null;
+
+  const clientPhotoUrl = useMemo(() => getClientPhotoUrl(clientData), [clientData]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
-   const getStatusText = (status: Appointment['status']) => {
-        const statusMap = {
-          'completed': 'Terminado',
-            'cancelled': 'Cancelado',
-            'confirmed': 'Confirmado',
-            'waiting': 'En Espera',
-          'in_progress': 'En Proceso',
-            'no-show': 'No Presentado',
-            'facturado': 'Facturado'
-        }
-        return statusMap[status];
-    }
-
-  if (loading) {
-    return <div className="flex justify-center items-center h-48"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+  if (dailyAppointments.length === 0) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-center px-4">
+        <Calendar className="h-12 w-12 text-muted-foreground/30" />
+        <p className="text-lg font-semibold text-foreground">Sin turnos para hoy</p>
+        <p className="text-sm text-muted-foreground">No tenés turnos programados para hoy.</p>
+      </div>
+    );
   }
 
   return (
-    <>
-      <ClientHistoryModal
-        isOpen={isHistoryModalOpen}
-        onClose={() => setIsHistoryModalOpen(false)}
-        appointments={historyAppointments}
-        clientName={historyClient?.name || ''}
-        clientPhone={historyClient?.mobilePhone}
-      />
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Briefcase className="h-6 w-6" />
-              Mis Turnos para Hoy
-            </CardTitle>
-            <CardDescription>
-              Estos son tus turnos programados para hoy, {format(new Date(), 'PPP', { locale: es })}. Haz clic en el nombre de un cliente para ver y gestionar su turno.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Hora</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Servicios</TableHead>
-                  <TableHead>Estado Turno</TableHead>
-                  <TableHead>Mi Progreso</TableHead>
-                  <TableHead className="text-right">Historial</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {dailyAppointments.length > 0 ? (
-                  dailyAppointments.map(appt => {
-                    const myAssignments = (appt.assignments || [])
-                      .map((a, idx) => ({ assignment: a, idx }))
-                      .filter(({ assignment }) => assignment.employeeId === currentUser?.id);
+    <div className="salon-shell myday-shell space-y-4 md:space-y-5 pb-10">
 
-                    const myTime = myAssignments[0]?.assignment?.time;
-                    const displayDate = myTime
-                      ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${myTime}:00`)
-                      : new Date(appt.date);
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Ficha de Cliente</h1>
+          <p className="text-sm text-muted-foreground">Vista de atención al cliente en turno</p>
+        </div>
+        {selectedAppt && (
+          <span className={cn(
+            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold',
+            getStatusInfo(selectedAppt.status).color
+          )}>
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {getStatusInfo(selectedAppt.status).label}
+          </span>
+        )}
+      </div>
 
-                    return (
-                      <TableRow key={appt.id}>
-                        <TableCell className="font-semibold">
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4" />
-                            {format(displayDate, 'p', { locale: es })}
+      {/* ── Appointment strip ─────────────────────────────────────────────── */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
+        {dailyAppointments.map(appt => {
+          const mine = (appt.assignments ?? []).find(a => a.employeeId === currentUser?.id);
+          const t = mine?.time
+            ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${mine.time}:00`)
+            : new Date(appt.date);
+          const isSelected = appt.id === selectedApptId;
+          const si = getStatusInfo(appt.status);
+          return (
+            <button
+              key={appt.id}
+              onClick={() => { setSelectedApptId(appt.id); }}
+              className={cn(
+                'flex shrink-0 flex-col items-start rounded-xl border px-3 py-2.5 text-left transition-all duration-150',
+                'min-w-[108px] max-w-[142px]',
+                isSelected
+                  ? 'border-primary/40 bg-primary/5 shadow-sm ring-1 ring-primary/20'
+                  : 'border-border bg-card hover:border-primary/20 hover:bg-muted/40'
+              )}
+            >
+              <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+                {format(t, 'HH:mm')}
+              </span>
+              <span className="mt-1 w-full truncate text-sm font-bold text-foreground leading-tight">
+                {appt.customerName.split(' ')[0]}
+              </span>
+              <span className={cn(
+                'mt-2 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                si.color
+              )}>
+                {si.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Ficha: 3 panels ──────────────────────────────────────────────── */}
+      {selectedAppt && (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+
+          {/* ── PANEL 1: Datos del cliente ─────────────────────────────────── */}
+          <div className="rounded-lg border bg-card shadow-sm flex flex-col overflow-hidden">
+
+            {/* Avatar + name header */}
+            <div className="p-4 pb-3">
+              <div className="flex items-start gap-4">
+                <ClientAvatar name={selectedAppt.customerName} photoUrl={clientPhotoUrl} size="md" />
+                <div className="min-w-0 flex-1 pt-0.5">
+                  {loadingClient ? (
+                    <div className="h-5 w-36 animate-pulse rounded-md bg-muted" />
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-bold leading-tight text-foreground">
+                        {selectedAppt.customerName}
+                      </h2>
+                      {clientData?.clientCategory && (
+                        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-200">
+                          {clientData.clientCategory}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {clientData?.code && (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Hash className="h-3 w-3" />{clientData.code}
+                    </p>
+                  )}
+                  {/* Stats */}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {clientData?.totalAppointments != null && (
+                      <span className="flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-foreground">
+                        <Calendar className="h-3 w-3 text-muted-foreground" />
+                        {clientData.totalAppointments} visitas
+                      </span>
+                    )}
+                    {myAssignments.map(({ idx }) => {
+                      const s = selectedAppt.serviceNames?.[idx];
+                      return s ? (
+                        <span key={idx} className="flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-foreground">
+                          <Scissors className="h-3 w-3 text-muted-foreground" />{s}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Appointment notes / allergy warning */}
+            {selectedAppt.notes && (
+              <>
+                <Separator />
+                <div className="mx-4 my-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    <p className="text-xs leading-relaxed text-amber-800">{selectedAppt.notes}</p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <Separator />
+
+            {/* Upcoming visits */}
+            <div className="px-4 py-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Próximas visitas</h4>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  {upcomingVisits.length}
+                </span>
+              </div>
+
+              {loadingClient ? (
+                <div className="mt-2 h-10 animate-pulse rounded-md bg-muted" />
+              ) : upcomingVisits.length === 0 ? (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                  <ImageOff className="h-3.5 w-3.5" />
+                  No hay próximas visitas agendadas.
+                </div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {upcomingVisits.map(visit => (
+                    <div key={visit.id} className="rounded-md border bg-muted/30 px-2.5 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-foreground">
+                          {format(new Date(visit.date), 'EEE d MMM, HH:mm', { locale: es })}
+                        </span>
+                        <span className={cn(
+                          'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                          getStatusInfo(visit.status).color
+                        )}>
+                          {getStatusInfo(visit.status).label}
+                        </span>
+                      </div>
+                      {(visit.serviceNames ?? []).filter(Boolean).length > 0 && (
+                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                          {(visit.serviceNames ?? []).filter(Boolean).join(' • ')}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Link to full profile */}
+            <div className="mt-auto border-t px-4 py-2.5">
+              <Button variant="ghost" size="sm" className="w-full justify-between text-xs text-muted-foreground hover:text-foreground" asChild>
+                <Link href={`/admin/clients/${encodeURIComponent(selectedAppt.customerEmail)}`}>
+                  Ver ficha completa
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+
+          {/* ── PANEL 2: Historial de visitas ──────────────────────────────── */}
+          <div className="rounded-xl border bg-card shadow-sm flex flex-col overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-3.5 py-3 border-b shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <h3 className="font-semibold text-sm text-foreground">Historial de Visitas</h3>
+              </div>
+              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                {clientHistory.length} registros
+              </span>
+            </div>
+
+            <ScrollArea className="flex-1" style={{ maxHeight: '420px' }}>
+              {loadingClient ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : clientHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-4">
+                  <Calendar className="h-8 w-8 text-muted-foreground/25" />
+                  <p className="text-sm font-medium text-muted-foreground">Sin visitas anteriores</p>
+                  <p className="text-xs text-muted-foreground/70">Es la primera vez que viene</p>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {clientHistory.map(appt => (
+                    <div key={appt.id} className="px-3.5 py-2.5 hover:bg-muted/20 transition-colors">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          {/* Date + employee */}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span className="text-sm font-bold text-foreground">
+                              {format(new Date(appt.date), "d MMM yyyy", { locale: es })}
+                            </span>
+                            {appt.employeeName && (
+                              <span className="text-xs text-muted-foreground">
+                                por {appt.employeeName.split(' ')[0]}
+                              </span>
+                            )}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button variant="link" asChild className="p-0 h-auto font-medium">
-                            <Link href={`/admin/clients/${encodeURIComponent(appt.customerEmail)}`}>
-                              {appt.customerName}
-                            </Link>
-                          </Button>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {myAssignments.map(({ idx }) => {
-                              const name = appt.serviceNames?.[idx];
-                              return name ? <Badge key={idx} variant="secondary">{name}</Badge> : null;
-                            })}
+                          {/* Services */}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {(appt.serviceNames ?? []).filter(Boolean).map((s, si) => (
+                              <span key={si} className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-foreground">
+                                <Scissors className="h-2.5 w-2.5 text-muted-foreground" />{s}
+                              </span>
+                            ))}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusVariant(appt.status)} className="capitalize">{getStatusText(appt.status)}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-2">
-                            {myAssignments.map(({ assignment, idx }) => {
-                              const serviceName = appt.serviceNames?.[idx] ?? 'Servicio';
-                              const assignmentStatus = assignment.status ?? 'pending';
+                          {/* Notes */}
+                          {appt.notes && (
+                            <p className="mt-1.5 text-[11px] italic text-muted-foreground leading-relaxed">
+                              {appt.notes}
+                            </p>
+                          )}
+                        </div>
+                        {/* Status badge */}
+                        <span className={cn(
+                          'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                          getStatusInfo(appt.status).color
+                        )}>
+                          {getStatusInfo(appt.status).label}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
+
+          {/* ── PANEL 3: Turno Actual ──────────────────────────────────────── */}
+          <div className="rounded-lg border bg-card shadow-sm flex flex-col overflow-hidden">
+
+            {/* Header */}
+            <div className="flex flex-col gap-2 px-3.5 py-3 border-b shrink-0 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                  <Scissors className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <h3 className="font-semibold text-sm text-foreground">Turno Actual</h3>
+              </div>
+              <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-[11px]"
+                  onClick={() => setIsEditingTurn(v => !v)}
+                  disabled={isPending || catalogLoading}
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                  {isEditingTurn ? 'Cancelar edición' : 'Editar aquí'}
+                </Button>
+                {isEditingTurn && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-[11px]"
+                    onClick={addDraftAssignment}
+                    disabled={isPending || catalogLoading}
+                  >
+                    <Scissors className="h-3.5 w-3.5" />
+                    Agregar servicio
+                  </Button>
+                )}
+                {isEditingTurn && (
+                  <Button size="sm" className="h-8 gap-1.5 text-[11px]" onClick={handleSaveTurnEdits} disabled={isPending || catalogLoading}>
+                    {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    Guardar cambios
+                  </Button>
+                )}
+                <span className={cn(
+                  'rounded-full border px-2.5 py-0.5 text-[11px] font-semibold',
+                  getStatusInfo(selectedAppt.status).color
+                )}>
+                  {getStatusInfo(selectedAppt.status).label}
+                </span>
+              </div>
+            </div>
+
+            {/* Service assignment cards */}
+            <div className="px-3.5 pt-3 pb-2 space-y-2">
+              {myAssignments.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No tenés servicios asignados en este turno.
+                </p>
+              )}
+              {displayedAssignments.map(({ assignment, idx }) => {
+                const editableAssignment = isEditingTurn ? draftAssignments[idx] : assignment;
+                const isOriginalAssignment = idx < initialAssignmentsCount;
+                const serviceName = allServices.find(s => s.id === editableAssignment?.serviceId)?.name
+                  ?? selectedAppt.serviceNames?.[idx]
+                  ?? 'Servicio';
+                const aStatus = editableAssignment?.status ?? 'pending';
+                return (
+                  <div key={idx} className="rounded-lg border bg-muted/20 p-2.5 space-y-2">
+                    {/* Service */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ClientAvatar name={currentUser?.name ?? 'Me'} size="sm" />
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-foreground leading-snug truncate">{serviceName}</p>
+                          <p className="text-xs text-muted-foreground">con {getEmployeeName(editableAssignment?.employeeId)}</p>
+                        </div>
+                      </div>
+                      <span className="rounded-full border bg-background px-2 py-1 text-[10px] text-muted-foreground">
+                        #{idx + 1}
+                      </span>
+                    </div>
+
+                    {isEditingTurn && !isOriginalAssignment && (
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-muted-foreground">Profesional</label>
+                          <select
+                            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                            value={editableAssignment.employeeId}
+                            onChange={(e) => updateDraftAssignment(idx, 'employeeId', e.target.value)}
+                          >
+                            <option value="">Seleccionar profesional...</option>
+                            {employees.map(employee => (
+                              <option key={employee.id} value={employee.id}>{employee.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-muted-foreground">Servicio</label>
+                          <select
+                            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                            value={editableAssignment.serviceId}
+                            onChange={(e) => updateDraftAssignment(idx, 'serviceId', e.target.value)}
+                          >
+                            <option value="">Seleccionar servicio...</option>
+                            {allServices.map(service => (
+                              <option key={service.id} value={service.id}>{service.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-muted-foreground">Hora</label>
+                          <input
+                            type="time"
+                            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                            value={editableAssignment.time}
+                            onChange={(e) => updateDraftAssignment(idx, 'time', e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1 md:col-span-2">
+                          <label className="text-[11px] font-semibold text-muted-foreground">Duración (min)</label>
+                          <input
+                            type="number"
+                            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                            value={editableAssignment.duration ?? 0}
+                            onChange={(e) => updateDraftAssignment(idx, 'duration', Number(e.target.value))}
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-[11px] font-semibold text-muted-foreground">Productos</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(editableAssignment.productIds ?? []).map((productId, productIndex) => {
+                              const product = allProducts.find(p => p.id === productId);
                               return (
-                                <div key={idx} className="flex items-center gap-2">
-                                  <span className="text-sm text-muted-foreground">{serviceName}:</span>
-                                  {assignmentStatus === 'completed' ? (
-                                    <Badge className="bg-green-600 text-white">Terminado</Badge>
-                                  ) : assignmentStatus === 'in_progress' ? (
-                                    <>
-                                      <Badge variant="default">En Proceso</Badge>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        disabled={isPending}
-                                        onClick={() => handleAssignmentStatus(appt.id, assignment.employeeId, 'completed')}
-                                      >
-                                        {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Finalizar'}
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Badge variant="outline">Pendiente</Badge>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        disabled={isPending}
-                                        onClick={() => handleAssignmentStatus(appt.id, assignment.employeeId, 'in_progress')}
-                                      >
-                                        {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Iniciar'}
-                                      </Button>
-                                    </>
-                                  )}
-                                </div>
+                                <span key={`${productId}-${productIndex}`} className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-[11px]">
+                                  <Package className="h-3 w-3 text-muted-foreground" />
+                                  {product?.name ?? 'Producto'}
+                                  <button
+                                    type="button"
+                                    className="ml-1 rounded-full px-1 hover:bg-muted"
+                                    onClick={() => removeProductFromDraft(idx, productIndex)}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
                               );
                             })}
                           </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleShowHistory(appt.customerEmail); }}>
-                            <History className="h-4 w-4" />
-                            <span className="sr-only">Ver Historial</span>
+                          <select
+                            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                            defaultValue=""
+                            onChange={(e) => {
+                              addProductToDraft(idx, e.target.value);
+                              e.currentTarget.value = '';
+                            }}
+                          >
+                            <option value="">Agregar producto...</option>
+                            {allProducts.map(product => (
+                              <option key={product.id} value={product.id}>{product.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="md:col-span-2 flex justify-end">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive"
+                            onClick={() => removeDraftAssignment(idx)}
+                          >
+                            Quitar servicio agregado
                           </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24">
-                      No tienes turnos para hoy.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
-    </>
+                        </div>
+                      </div>
+                    )}
+
+                    <Separator />
+
+                    {/* Time + duration */}
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" />
+                        <span className="font-semibold text-foreground tabular-nums">
+                          {displayDate ? format(displayDate, 'HH:mm') : '—'}
+                        </span>
+                      </span>
+                      {assignment.duration && (
+                        <span className="flex items-center gap-1">
+                          Duración:
+                          <span className="font-semibold text-foreground">{editableAssignment?.duration ?? assignment.duration} min</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Action button */}
+                    {aStatus === 'pending' && (
+                      <Button
+                        size="sm"
+                        className="h-8 w-full gap-2 text-xs"
+                        disabled={isPending}
+                        onClick={() => handleStatus('in_progress')}
+                      >
+                        {isPending
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <PlayCircle className="h-3.5 w-3.5" />}
+                        Iniciar atención
+                      </Button>
+                    )}
+                    {aStatus === 'in_progress' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-full gap-2 text-xs border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
+                        disabled={isPending}
+                        onClick={() => handleStatus('completed')}
+                      >
+                        {isPending
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        Finalizar servicio
+                      </Button>
+                    )}
+                    {aStatus === 'completed' && (
+                      <div className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 py-2 text-xs font-semibold text-emerald-700">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Servicio completado
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <Separator />
+
+            {/* Notes section */}
+            <div className="px-3.5 py-3 flex-1 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-semibold text-foreground">Notas internas</span>
+              </div>
+              <Textarea
+                placeholder="Color utilizado, productos recomendados, observaciones del cliente…"
+                className="flex-1 min-h-[84px] resize-none text-xs bg-muted/20 border-muted focus:bg-background"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs"
+                  disabled={isPending}
+                  onClick={handleSaveNotes}
+                >
+                  {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                  Guardar nota
+                </Button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+    </div>
   );
 }
-
-    

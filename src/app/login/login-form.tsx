@@ -89,7 +89,7 @@ export default function LoginForm({ users, dbError = false }: { users: User[]; d
                     )}
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="email">Usuario (Email)</Label>
+                            <Label htmlFor="email">Usuario</Label>
                             <Popover open={open} onOpenChange={setOpen}>
                                 <PopoverTrigger asChild>
                                     <Button
