@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAppointments, getUsers, getAppointmentsByClient, getClientByEmail } from '@/lib/data';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, setHours, setMinutes, addMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar as CalendarIcon, Filter, Clock, PlusCircle, Loader2, Upload, Download, Edit, User as UserIcon, Scissors } from 'lucide-react';
+import { Calendar as CalendarIcon, Filter, Clock, PlusCircle, Loader2, Upload, Download, User as UserIcon, Scissors } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { Appointment, AppointmentAssignment, Client, User } from '@/lib/types';
@@ -19,7 +19,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { DayAppointmentsModal } from '@/components/day-appointments-modal';
 import { ClientHistoryModal } from '@/components/client-history-modal';
 import { useCurrentUser } from '../user-context';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { importData, exportAppointments, moveAssignment } from '@/lib/actions';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -148,6 +148,7 @@ function DayView({
         pendingServicesCount,
   onMoveAssignment,
     isHairdresser,
+        isReception,
     onOpenMyDay,
 }: {
   day: Date;
@@ -168,6 +169,7 @@ function DayView({
         pendingServicesCount: number;
   onMoveAssignment: (apptId: string, idx: number, newTime: string, newEmployeeId: string) => Promise<void>;
     isHairdresser: boolean;
+        isReception: boolean;
     onOpenMyDay: (appointmentId: string) => void;
 }) {
     const timeIndicatorRef = useRef<HTMLDivElement>(null);
@@ -280,7 +282,7 @@ function DayView({
             </AlertDialogContent>
         </AlertDialog>
         <div className="flex flex-col">
-            <div className="agenda-day-summary grid gap-3 border-b bg-muted/30 px-4 py-3 text-sm md:grid-cols-3">
+            <div className={cn("agenda-day-summary grid gap-3 border-b bg-muted/30 px-4 py-3 md:grid-cols-3", isReception ? 'text-base' : 'text-sm')}>
                 <div>
                     <span className="font-medium text-foreground">Turnos del día:</span>{' '}
                     <span className="text-lg font-semibold text-foreground">{totalAppointmentsCount}</span>
@@ -300,7 +302,7 @@ function DayView({
                     {visibleEmployees.map((employee, employeePosition) => (
                         <div
                             key={employee.id}
-                            className="border-l px-2 py-3 text-center font-semibold text-xs md:text-sm leading-tight"
+                            className={cn("border-l px-2 py-3 text-center font-semibold leading-tight", isReception ? 'text-sm md:text-base' : 'text-xs md:text-sm')}
                             style={{ backgroundColor: employeePosition % 2 === 0 ? '#ffffff' : '#f1f5f9' }}
                         >
                             {employee.name}
@@ -355,17 +357,17 @@ function DayView({
                                         className="absolute inset-x-0 border-t border-slate-300/90 px-2 pt-1 text-slate-800"
                                         style={{ top: index * rowHeight + timelineTopOffset, height: hourHeight }}
                                     >
-                                        <div className="text-[22px] font-semibold leading-none tracking-tight md:text-2xl">
+                                        <div className={cn("font-semibold leading-none tracking-tight", isReception ? 'text-2xl md:text-[28px]' : 'text-[22px] md:text-2xl')}>
                                             {String(hours).padStart(2, '0')}
                                         </div>
-                                        <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                        <div className={cn("mt-1 font-semibold uppercase tracking-[0.12em] text-slate-500", isReception ? 'text-[11px]' : 'text-[10px]')}>
                                             hs
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
-                        <div className="relative flex-1 bg-slate-800 text-[10px] font-semibold text-slate-100 md:text-[11px]">
+                        <div className={cn("relative flex-1 bg-slate-800 font-semibold text-slate-100", isReception ? 'text-[11px] md:text-xs' : 'text-[10px] md:text-[11px]')}>
                             {timeSlots.map((time, index) => {
                                 const [, minutes] = time.split(':').map(Number);
 
@@ -556,9 +558,9 @@ function DayView({
                                                                         }}
                                                                     >
                                                                         <div className="px-2 py-1 md:px-2.5 md:py-1.5 space-y-0.5 min-w-0">
-                                                                            <p className="font-semibold text-[10px] md:text-xs leading-snug text-current truncate">{appt.customerName}</p>
-                                                                            <p className="text-[9px] md:text-[10px] font-medium leading-tight text-current opacity-90 truncate">{serviceName}</p>
-                                                                            <p className="text-[8px] md:text-[9px] font-medium text-current opacity-75">{assignment.duration} min</p>
+                                                                            <p className={cn("font-semibold leading-snug text-current truncate", isReception ? 'text-xs md:text-sm' : 'text-[10px] md:text-xs')}>{appt.customerName}</p>
+                                                                            <p className={cn("font-medium leading-tight text-current opacity-90 truncate", isReception ? 'text-[11px] md:text-xs' : 'text-[9px] md:text-[10px]')}>{serviceName}</p>
+                                                                            <p className={cn("font-medium text-current opacity-75", isReception ? 'text-[10px] md:text-[11px]' : 'text-[8px] md:text-[9px]')}>{assignment.duration} min</p>
                                                                         </div>
                                                                     </div>
                                                                 </TooltipTrigger>
@@ -665,9 +667,18 @@ function DayView({
 
 export default function AgendaPage() {
   const router = useRouter();
+    const searchParams = useSearchParams();
   const { currentUser } = useCurrentUser();
   const { toast } = useToast();
-  const [date, setDate] = useState<Date>(new Date());
+
+    const resolveDateFromQuery = () => {
+        const dateParam = searchParams.get('date');
+        if (!dateParam) return new Date();
+        const parsed = new Date(`${dateParam}T00:00:00`);
+        return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    };
+
+    const [date, setDate] = useState<Date>(resolveDateFromQuery);
   const [employeeFilter, setEmployeeFilter] = useState('todos');
   const [isDayModalOpen, setIsDayModalOpen] = useState(false);
   const [dayModalAppointments, setDayModalAppointments] = useState<Appointment[]>([]);
@@ -686,6 +697,10 @@ export default function AgendaPage() {
 
   const importInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, startTransition] = useTransition();
+
+    useEffect(() => {
+        setDate(resolveDateFromQuery());
+    }, [searchParams]);
 
   const timeSlots = useMemo(() => {
     const slots: string[] = [];
@@ -737,6 +752,7 @@ export default function AgendaPage() {
 
 
   const isHairdresser = currentUser?.role === 'Peluquero';
+    const isReception = currentUser?.role === 'Recepcion';
   const canManageAgenda = !isHairdresser;
   const canImportExport = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente';
 
@@ -1041,10 +1057,10 @@ export default function AgendaPage() {
       <div className="salon-shell space-y-4 md:space-y-5">
         <Tabs defaultValue="dia">
           <div className="flex justify-center mb-4">
-              <TabsList className="agenda-tabs-list grid w-full max-w-md grid-cols-3">
+              <TabsList className={cn('agenda-tabs-list grid w-full max-w-md', isReception ? 'grid-cols-1' : 'grid-cols-3')}>
                   <TabsTrigger className="agenda-tabs-trigger" value="dia">Día</TabsTrigger>
-                  <TabsTrigger className="agenda-tabs-trigger" value="semana">Semana</TabsTrigger>
-                  <TabsTrigger className="agenda-tabs-trigger" value="mes">Mes</TabsTrigger>
+                  {!isReception && <TabsTrigger className="agenda-tabs-trigger" value="semana">Semana</TabsTrigger>}
+                  {!isReception && <TabsTrigger className="agenda-tabs-trigger" value="mes">Mes</TabsTrigger>}
               </TabsList>
           </div>
           <TabsContent value="dia">
@@ -1062,14 +1078,6 @@ export default function AgendaPage() {
                                 <Link href={`/admin/appointments/new?date=${date.toISOString().split('T')[0]}`}>
                                     <PlusCircle className="mr-2 h-4 w-4"/>
                                     Nuevo Turno
-                                </Link>
-                            </Button>
-                        }
-                        {canManageAgenda &&
-                            <Button variant="outline" asChild>
-                                <Link href="/admin/appointments/fast-entry">
-                                    <Edit className="mr-2 h-4 w-4"/>
-                                    Carga Rápida
                                 </Link>
                             </Button>
                         }
@@ -1098,13 +1106,14 @@ export default function AgendaPage() {
                                                         pendingServicesCount={dayAppointmentsSummary.pendingServicesCount}
                             onMoveAssignment={handleMoveAssignment}
                             isHairdresser={!!isHairdresser}
+                            isReception={!!isReception}
                             onOpenMyDay={handleOpenInMyDay}
                         />
                     )}
                   </CardContent>
               </Card>
           </TabsContent>
-          <TabsContent value="semana">
+          {!isReception && <TabsContent value="semana">
             <Card className="agenda-panel">
                   <CardHeader>
                       <CardTitle>Agenda de la Semana</CardTitle>
@@ -1114,8 +1123,8 @@ export default function AgendaPage() {
                       {renderWeekView(date)}
                   </CardContent>
                </Card>
-          </TabsContent>
-          <TabsContent value="mes">
+          </TabsContent>}
+          {!isReception && <TabsContent value="mes">
               <Card className="agenda-panel">
                   <CardHeader>
                       <CardTitle>Agenda del Mes: {format(date, "MMMM yyyy", { locale: es })}</CardTitle>
@@ -1124,7 +1133,7 @@ export default function AgendaPage() {
                       {renderMonthView(date)}
                   </CardContent>
               </Card>
-          </TabsContent>
+          </TabsContent>}
         </Tabs>
 
         <Card className="agenda-panel">

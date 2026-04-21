@@ -223,7 +223,8 @@ export default function NewAppointmentPage() {
                 }
 
                 toast({ title: isEditing ? 'Turno Actualizado' : 'Turno Creado Exitosamente' });
-                router.push('/admin/agenda');
+                const agendaDate = format(date || new Date(), 'yyyy-MM-dd');
+                router.push(`/admin/agenda?date=${agendaDate}`);
             } catch (e) {
                 console.error(e);
                 toast({ variant: "destructive", title: "Error", description: 'No se pudo guardar el turno.' });
@@ -251,7 +252,8 @@ export default function NewAppointmentPage() {
             const result = await deleteAppointment(appointmentId);
             if(result.success) {
                 toast({ title: "Turno Eliminado", description: "El turno ha sido eliminado correctamente." });
-                router.push('/admin/agenda');
+                const agendaDate = format(date || new Date(), 'yyyy-MM-dd');
+                router.push(`/admin/agenda?date=${agendaDate}`);
             } else {
                 toast({ variant: "destructive", title: "Error", description: result.message });
             }
@@ -272,7 +274,8 @@ export default function NewAppointmentPage() {
     }
 
     const handleBack = () => {
-        router.push('/admin/agenda');
+        const agendaDate = format(date || new Date(), 'yyyy-MM-dd');
+        router.push(`/admin/agenda?date=${agendaDate}`);
     }
     
     const addAssignment = () => {
