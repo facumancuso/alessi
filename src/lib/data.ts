@@ -225,9 +225,6 @@ export async function updateAppointment(id: string, data: Partial<Appointment>):
   await connectToDatabase();
   
   const updateData = { ...data };
-  if (!updateData.status) {
-    updateData.status = 'confirmed';
-  }
 
   const updated = await AppointmentModel.findByIdAndUpdate(id, updateData, { new: true, upsert: true }).lean();
   if (!updated) return undefined;

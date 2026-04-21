@@ -300,13 +300,14 @@ export default function MyDayPage() {
     if (!targetAppointment || !targetAssignment) return null;
 
     const targetTimestamp = getAssignmentTimestamp(targetAppointment, targetAssignment);
+    const targetClientKey = (targetAppointment.customerEmail || targetAppointment.customerName || '').toLowerCase().trim();
 
     const previousUnfinished = dailyAppointments
       .filter(a => a.status !== 'cancelled' && a.status !== 'no-show')
+      .filter(a => ((a.customerEmail || a.customerName || '').toLowerCase().trim()) === targetClientKey)
       .flatMap(a =>
         (a.assignments ?? [])
           .map((asg, idx) => ({ appt: a, asg, idx }))
-          .filter(({ asg }) => asg.employeeId === currentUser.id)
       )
       .filter(({ appt, asg, idx }) => {
         if (appt.id === appointmentId && idx === assignmentIdx) return false;
