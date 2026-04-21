@@ -184,6 +184,14 @@ export default function NewAppointmentPage() {
 
     const handleSave = () => {
         if (!canEdit) return;
+        if (!customerName.trim()) {
+            toast({
+                variant: "destructive",
+                title: "Falta el cliente",
+                description: "Ingresá o seleccioná un cliente antes de guardar el turno.",
+            });
+            return;
+        }
         if (!date || assignments.length === 0 || assignments.some(a => !a.serviceId || !a.employeeId || !a.time)) {
             toast({
                 variant: "destructive",

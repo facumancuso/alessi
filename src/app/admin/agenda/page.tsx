@@ -26,6 +26,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { sortEmployeesByAgendaOrder } from '@/lib/employee-order';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const employeeColors = [
     { bg: 'bg-white', text: 'text-slate-900', border: 'border-slate-300', hueVar: 0 },
@@ -113,6 +114,13 @@ interface PendingMove {
     newEmployeeName: string;
 }
 
+interface AppointmentPreviewData {
+    appointment: Appointment;
+    assignment: AppointmentAssignment;
+    serviceName: string;
+    employeeName: string;
+}
+
 const attendedStatuses = new Set<Appointment['status']>(['completed', 'facturado']);
 
 function DayView({
@@ -131,7 +139,11 @@ function DayView({
   allEmployees,
     totalAppointmentsCount,
     attendedAppointmentsCount,
+        pendingServicesCount,
   onMoveAssignment,
+    isHairdresser,
+    onAppointmentPreview,
+    onOpenMyDay,
 }: {
   day: Date;
   viewStartHour: number;
@@ -148,7 +160,11 @@ function DayView({
   allEmployees: User[];
     totalAppointmentsCount: number;
     attendedAppointmentsCount: number;
+        pendingServicesCount: number;
   onMoveAssignment: (apptId: string, idx: number, newTime: string, newEmployeeId: string) => Promise<void>;
+    isHairdresser: boolean;
+    onAppointmentPreview: (data: AppointmentPreviewData) => void;
+    onOpenMyDay: (appointmentId: string) => void;
 }) {
     const timeIndicatorRef = useRef<HTMLDivElement>(null);
     const [dragState, setDragState] = useState<DragState | null>(null);
@@ -156,6 +172,7 @@ function DayView({
     const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
     const [isMoving, setIsMoving] = useState(false);
     const [hoveredRow, setHoveredRow] = useState<{ top: number; height: number } | null>(null);
+    const lastTapRef = useRef<{ blockId: string; at: number } | null>(null);
     const minuteHeight = 1.3;
     const timelineTopOffset = 14;
     const hourHeight = 60 * minuteHeight;
@@ -236,7 +253,7 @@ function DayView({
             </AlertDialogContent>
         </AlertDialog>
         <div className="flex flex-col">
-            <div className="agenda-day-summary grid gap-3 border-b bg-muted/30 px-4 py-3 text-sm md:grid-cols-2">
+            <div className="agenda-day-summary grid gap-3 border-b bg-muted/30 px-4 py-3 text-sm md:grid-cols-3">
                 <div>
                     <span className="font-medium text-foreground">Turnos del día:</span>{' '}
                     <span className="text-lg font-semibold text-foreground">{totalAppointmentsCount}</span>
@@ -244,6 +261,10 @@ function DayView({
                 <div>
                     <span className="font-medium text-foreground">Turnos atendidos:</span>{' '}
                     <span className="text-lg font-semibold text-foreground">{attendedAppointmentsCount}</span>
+                </div>
+                <div>
+                    <span className="font-medium text-foreground">Servicios por realizar:</span>{' '}
+                    <span className="text-lg font-semibold text-foreground">{pendingServicesCount}</span>
                 </div>
             </div>
             <div className="agenda-employee-header flex sticky top-0 bg-card/95 backdrop-blur z-30 border-b">
@@ -435,7 +456,37 @@ function DayView({
                                                                         onDragEnd={() => { setDragState(null); setHoverSlot(null); }}
                                                                         onMouseEnter={() => setHoveredRow({ top, height: visualHeight })}
                                                                         onMouseLeave={() => setHoveredRow(null)}
-                                                                        onClick={() => handleEditAppointment(appt)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (isHairdresser) {
+                                                                                const employeeName = allEmployees.find(emp => emp.id === assignment.employeeId)?.name || 'Profesional';
+                                                                                onAppointmentPreview({
+                                                                                    appointment: appt,
+                                                                                    assignment,
+                                                                                    serviceName,
+                                                                                    employeeName,
+                                                                                });
+                                                                                return;
+                                                                            }
+                                                                            handleEditAppointment(appt);
+                                                                        }}
+                                                                        onDoubleClick={(e) => {
+                                                                            if (!isHairdresser || !appt.id) return;
+                                                                            e.stopPropagation();
+                                                                            onOpenMyDay(appt.id);
+                                                                        }}
+                                                                        onTouchEnd={(e) => {
+                                                                            if (!isHairdresser || !appt.id) return;
+                                                                            e.stopPropagation();
+                                                                            const nowTs = Date.now();
+                                                                            const previousTap = lastTapRef.current;
+                                                                            if (previousTap && previousTap.blockId === blockId && nowTs - previousTap.at < 320) {
+                                                                                lastTapRef.current = null;
+                                                                                onOpenMyDay(appt.id);
+                                                                                return;
+                                                                            }
+                                                                            lastTapRef.current = { blockId, at: nowTs };
+                                                                        }}
                                                                     >
                                                                         <div className="px-2 py-1 md:px-2.5 md:py-1.5 space-y-0.5 min-w-0">
                                                                             <p className="font-semibold text-[10px] md:text-xs leading-snug text-current truncate">{appt.customerName}</p>
@@ -498,6 +549,8 @@ export default function AgendaPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [allEmployees, setAllEmployees] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+    const [isAppointmentPreviewOpen, setIsAppointmentPreviewOpen] = useState(false);
+    const [appointmentPreview, setAppointmentPreview] = useState<AppointmentPreviewData | null>(null);
   
   const [startHour, setStartHour] = useState(10);
   const [endHour, setEndHour] = useState(19);
@@ -559,12 +612,6 @@ export default function AgendaPage() {
   const canManageAgenda = !isHairdresser;
   const canImportExport = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente';
 
-  useEffect(() => {
-      if (isHairdresser && currentUser?.id) {
-          setEmployeeFilter(currentUser.id);
-      }
-  }, [isHairdresser, currentUser]);
-
     const getAppointmentsForDay = (day: Date, employeeId?: string) => {
     let appointmentsToFilter = [...appointments];
     
@@ -613,10 +660,30 @@ export default function AgendaPage() {
 
   const dayAppointmentsSummary = useMemo(() => {
       const dayAppointments = getAppointmentsForDaySummary(date);
+      const pendingStatuses = new Set<Appointment['status']>(['confirmed', 'waiting', 'in_progress']);
+
+      const countAppointmentServices = (appt: Appointment) => {
+          if (appt.assignments && appt.assignments.length > 0) {
+              return appt.assignments.length;
+          }
+
+          const services = Array.isArray(appt.serviceNames)
+              ? appt.serviceNames.filter(Boolean)
+              : appt.serviceNames
+                  ? [appt.serviceNames]
+                  : [];
+
+          return services.length > 0 ? services.length : 1;
+      };
+
+      const pendingServicesCount = dayAppointments
+          .filter(appt => pendingStatuses.has(appt.status))
+          .reduce((sum, appt) => sum + countAppointmentServices(appt), 0);
 
       return {
           totalAppointmentsCount: dayAppointments.length,
           attendedAppointmentsCount: dayAppointments.filter(appt => attendedStatuses.has(appt.status)).length,
+          pendingServicesCount,
       };
   }, [appointments, date, employeeFilter]);
 
@@ -663,6 +730,16 @@ export default function AgendaPage() {
 
   const handleEditAppointment = (appointment: Appointment) => {
       router.push(`/admin/appointments/new?id=${appointment.id}`);
+  };
+
+  const handleOpenAppointmentPreview = (data: AppointmentPreviewData) => {
+      setAppointmentPreview(data);
+      setIsAppointmentPreviewOpen(true);
+  };
+
+  const handleOpenInMyDay = (appointmentId?: string) => {
+      if (!appointmentId) return;
+      router.push(`/admin/my-day?appointmentId=${appointmentId}`);
   };
 
   const handleMoveAssignment = async (apptId: string, idx: number, newTime: string, newEmployeeId: string) => {
@@ -838,6 +915,65 @@ export default function AgendaPage() {
                 clientPhone={historyClient?.mobilePhone}
       />
       <input type="file" ref={importInputRef} className="hidden" onChange={handleFileImport} accept=".csv" />
+            <Dialog open={isAppointmentPreviewOpen} onOpenChange={setIsAppointmentPreviewOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Detalle del turno</DialogTitle>
+                        <DialogDescription>
+                            Vista rápida del turno seleccionado.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {appointmentPreview ? (
+                        <div className="space-y-3 text-sm">
+                            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+                                <p className="text-xs text-muted-foreground">Cliente</p>
+                                <p className="font-semibold">{appointmentPreview.appointment.customerName}</p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="rounded-lg border px-3 py-2">
+                                    <p className="text-xs text-muted-foreground">Profesional</p>
+                                    <p className="font-medium">{appointmentPreview.employeeName}</p>
+                                </div>
+                                <div className="rounded-lg border px-3 py-2">
+                                    <p className="text-xs text-muted-foreground">Horario</p>
+                                    <p className="font-medium">{appointmentPreview.assignment.time}</p>
+                                </div>
+                                <div className="rounded-lg border px-3 py-2">
+                                    <p className="text-xs text-muted-foreground">Servicio</p>
+                                    <p className="font-medium">{appointmentPreview.serviceName}</p>
+                                </div>
+                                <div className="rounded-lg border px-3 py-2">
+                                    <p className="text-xs text-muted-foreground">Duración</p>
+                                    <p className="font-medium">{appointmentPreview.assignment.duration} min</p>
+                                </div>
+                            </div>
+                            {appointmentPreview.appointment.notes && (
+                                <div className="rounded-lg border px-3 py-2">
+                                    <p className="text-xs text-muted-foreground">Notas</p>
+                                    <p className="text-sm leading-relaxed">{appointmentPreview.appointment.notes}</p>
+                                </div>
+                            )}
+                        </div>
+                    ) : null}
+                    <DialogFooter className="gap-2">
+                        {appointmentPreview?.appointment.id && (
+                            <Button variant="outline" onClick={() => handleOpenInMyDay(appointmentPreview.appointment.id)}>
+                                Ir a My Day
+                            </Button>
+                        )}
+                        {!isHairdresser && appointmentPreview?.appointment && (
+                            <Button
+                                onClick={() => {
+                                    setIsAppointmentPreviewOpen(false);
+                                    handleEditAppointment(appointmentPreview.appointment);
+                                }}
+                            >
+                                Editar turno
+                            </Button>
+                        )}
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
       <div className="salon-shell space-y-4 md:space-y-5">
         <Tabs defaultValue="dia">
           <div className="flex justify-center mb-4">
@@ -895,7 +1031,11 @@ export default function AgendaPage() {
                             allEmployees={allEmployees}
                                                         totalAppointmentsCount={dayAppointmentsSummary.totalAppointmentsCount}
                                                         attendedAppointmentsCount={dayAppointmentsSummary.attendedAppointmentsCount}
+                                                        pendingServicesCount={dayAppointmentsSummary.pendingServicesCount}
                             onMoveAssignment={handleMoveAssignment}
+                            isHairdresser={!!isHairdresser}
+                            onAppointmentPreview={handleOpenAppointmentPreview}
+                            onOpenMyDay={handleOpenInMyDay}
                         />
                     )}
                   </CardContent>
@@ -955,7 +1095,7 @@ export default function AgendaPage() {
                                             </PopoverContent>
                                         </Popover>
                     
-                                            <Select value={employeeFilter} onValueChange={setEmployeeFilter} disabled={isHairdresser}>
+                                            <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
                                                     <SelectTrigger className="w-full">
                                                             <SelectValue placeholder="Filtrar por empleado..." />
                                                     </SelectTrigger>

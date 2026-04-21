@@ -183,15 +183,40 @@ export async function getAppointmentById(id: string): Promise<Appointment | unde
 export async function createAppointment(data: Partial<Omit<Appointment, 'id'>> & { status?: Appointment['status'] }): Promise<Appointment> {
   await connectToDatabase();
 
+  const normalizedCustomerName = (data.customerName || '').trim();
+  if (!normalizedCustomerName) {
+    throw new Error('Customer name is required to create an appointment.');
+  }
+
+  const normalizedCustomerPhone = (data.customerPhone || '').trim();
+  const normalizedCustomerEmail = (data.customerEmail || '').trim().toLowerCase();
+
+  const slugBase = normalizedCustomerName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '') || 'cliente';
+
+  const phoneDigits = normalizedCustomerPhone.replace(/\D/g, '').slice(-6) || 'sintelefono';
+  const safeCustomerEmail = normalizedCustomerEmail || `${slugBase}.${phoneDigits}.${Date.now()}@placeholder.com`;
+
   const newAppointmentData = {
     ...data,
+    customerName: normalizedCustomerName,
+    customerEmail: safeCustomerEmail,
+    customerPhone: normalizedCustomerPhone || undefined,
     status: data.status ?? ('confirmed' as const),
   };
 
   const newAppointment = await AppointmentModel.create(newAppointmentData);
 
   // Create or update client
-  await createClient({ name: data.customerName, email: data.customerEmail, mobilePhone: data.customerPhone });
+  await createClient({
+    name: normalizedCustomerName,
+    email: safeCustomerEmail,
+    mobilePhone: normalizedCustomerPhone || undefined,
+  });
 
   return { ...newAppointment.toObject(), id: newAppointment._id.toString(), _id: undefined } as unknown as Appointment;
 }

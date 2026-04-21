@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { updateAssignmentStatus, updateAppointment } from '@/lib/actions';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
@@ -101,6 +102,7 @@ function ClientAvatar({
 
 export default function MyDayPage() {
   const { currentUser } = useCurrentUser();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
   const [dailyAppointments, setDailyAppointments] = useState<Appointment[]>([]);
@@ -120,6 +122,7 @@ export default function MyDayPage() {
   const [isEditingTurn, setIsEditingTurn] = useState(false);
   const [draftAssignments, setDraftAssignments] = useState<AppointmentAssignment[]>([]);
   const [initialAssignmentsCount, setInitialAssignmentsCount] = useState(0);
+  const requestedAppointmentId = searchParams.get('appointmentId');
 
   useEffect(() => {
     const fetchAppointments = async (showLoader = false) => {
@@ -195,6 +198,16 @@ export default function MyDayPage() {
       return () => clearInterval(interval);
     }
   }, [currentUser, toast]);
+
+  useEffect(() => {
+    if (!dailyAppointments.length) return;
+    if (!requestedAppointmentId) return;
+
+    const requestedExists = dailyAppointments.some(appt => appt.id === requestedAppointmentId);
+    if (requestedExists) {
+      setSelectedApptId(requestedAppointmentId);
+    }
+  }, [requestedAppointmentId, dailyAppointments]);
 
   // Load client details when selection changes
   useEffect(() => {
@@ -557,128 +570,10 @@ export default function MyDayPage() {
 
       {/* ── Ficha: 3 panels ──────────────────────────────────────────────── */}
       {selectedAppt && (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-
-          {/* ── PANEL 1: Datos del cliente ─────────────────────────────────── */}
-          <div className="rounded-lg border bg-card shadow-sm flex flex-col overflow-hidden">
-
-            {/* Avatar + name header */}
-            <div className="p-4 pb-3">
-              <div className="flex items-start gap-4">
-                <ClientAvatar name={selectedAppt.customerName} photoUrl={clientPhotoUrl} size="md" />
-                <div className="min-w-0 flex-1 pt-0.5">
-                  {loadingClient ? (
-                    <div className="h-5 w-36 animate-pulse rounded-md bg-muted" />
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-lg font-bold leading-tight text-foreground">
-                        {selectedAppt.customerName}
-                      </h2>
-                      {clientData?.clientCategory && (
-                        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-200">
-                          {clientData.clientCategory}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {clientData?.code && (
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                      <Hash className="h-3 w-3" />{clientData.code}
-                    </p>
-                  )}
-                  {/* Stats */}
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {clientData?.totalAppointments != null && (
-                      <span className="flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-foreground">
-                        <Calendar className="h-3 w-3 text-muted-foreground" />
-                        {clientData.totalAppointments} visitas
-                      </span>
-                    )}
-                    {myAssignments.map(({ idx }) => {
-                      const s = selectedAppt.serviceNames?.[idx];
-                      return s ? (
-                        <span key={idx} className="flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-foreground">
-                          <Scissors className="h-3 w-3 text-muted-foreground" />{s}
-                        </span>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Appointment notes / allergy warning */}
-            {selectedAppt.notes && (
-              <>
-                <Separator />
-                <div className="mx-4 my-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                  <div className="flex items-start gap-2.5">
-                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-                    <p className="text-xs leading-relaxed text-amber-800">{selectedAppt.notes}</p>
-                  </div>
-                </div>
-              </>
-            )}
-
-            <Separator />
-
-            {/* Upcoming visits */}
-            <div className="px-4 py-3.5">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Próximas visitas</h4>
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                  {upcomingVisits.length}
-                </span>
-              </div>
-
-              {loadingClient ? (
-                <div className="mt-2 h-10 animate-pulse rounded-md bg-muted" />
-              ) : upcomingVisits.length === 0 ? (
-                <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                  <ImageOff className="h-3.5 w-3.5" />
-                  No hay próximas visitas agendadas.
-                </div>
-              ) : (
-                <div className="mt-2 space-y-2">
-                  {upcomingVisits.map(visit => (
-                    <div key={visit.id} className="rounded-md border bg-muted/30 px-2.5 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-foreground">
-                          {format(new Date(visit.date), 'EEE d MMM, HH:mm', { locale: es })}
-                        </span>
-                        <span className={cn(
-                          'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
-                          getStatusInfo(visit.status).color
-                        )}>
-                          {getStatusInfo(visit.status).label}
-                        </span>
-                      </div>
-                      {(visit.serviceNames ?? []).filter(Boolean).length > 0 && (
-                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                          {(visit.serviceNames ?? []).filter(Boolean).join(' • ')}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Link to full profile */}
-            <div className="mt-auto border-t px-4 py-2.5">
-              <Button variant="ghost" size="sm" className="w-full justify-between text-xs text-muted-foreground hover:text-foreground" asChild>
-                <Link href={`/admin/clients/${encodeURIComponent(selectedAppt.customerEmail)}`}>
-                  Ver ficha completa
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-4">
 
           {/* ── PANEL 2: Historial de visitas ──────────────────────────────── */}
-          <div className="rounded-xl border bg-card shadow-sm flex flex-col overflow-hidden">
+          <div className="order-2 rounded-xl border bg-card shadow-sm flex flex-col overflow-hidden">
 
             {/* Header */}
             <div className="flex items-center justify-between px-3.5 py-3 border-b shrink-0">
@@ -752,7 +647,7 @@ export default function MyDayPage() {
           </div>
 
           {/* ── PANEL 3: Turno Actual ──────────────────────────────────────── */}
-          <div className="rounded-lg border bg-card shadow-sm flex flex-col overflow-hidden">
+          <div className="order-1 rounded-lg border bg-card shadow-sm flex flex-col overflow-hidden">
 
             {/* Header */}
             <div className="flex flex-col gap-2 px-3.5 py-3 border-b shrink-0 sm:flex-row sm:items-center sm:justify-between">
@@ -800,6 +695,37 @@ export default function MyDayPage() {
               </div>
             </div>
 
+            <div className="px-3.5 py-3 border-b bg-muted/10">
+              <div className="flex items-start gap-3">
+                <ClientAvatar name={selectedAppt.customerName} photoUrl={clientPhotoUrl} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-bold leading-tight text-foreground">
+                      {selectedAppt.customerName}
+                    </h2>
+                    {clientData?.clientCategory && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
+                        {clientData.clientCategory}
+                      </span>
+                    )}
+                  </div>
+                  {clientData?.code && (
+                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <Hash className="h-3 w-3" />{clientData.code}
+                    </p>
+                  )}
+                  {selectedAppt.notes && (
+                    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5">
+                      <div className="flex items-start gap-1.5">
+                        <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+                        <p className="text-[11px] leading-relaxed text-amber-800 line-clamp-2">{selectedAppt.notes}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Service assignment cards */}
             <div className="px-3.5 pt-3 pb-2 space-y-2">
               {myAssignments.length === 0 && (
@@ -818,12 +744,9 @@ export default function MyDayPage() {
                   <div key={idx} className="rounded-lg border bg-muted/20 p-2.5 space-y-2">
                     {/* Service */}
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <ClientAvatar name={currentUser?.name ?? 'Me'} size="sm" />
-                        <div className="min-w-0">
-                          <p className="font-bold text-sm text-foreground leading-snug truncate">{serviceName}</p>
-                          <p className="text-xs text-muted-foreground">con {getEmployeeName(editableAssignment?.employeeId)}</p>
-                        </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-foreground leading-snug truncate">{serviceName}</p>
+                        <p className="text-xs text-muted-foreground">con {getEmployeeName(editableAssignment?.employeeId)}</p>
                       </div>
                       <span className="rounded-full border bg-background px-2 py-1 text-[10px] text-muted-foreground">
                         #{idx + 1}
@@ -970,28 +893,26 @@ export default function MyDayPage() {
                         Finalizar servicio
                       </Button>
                     )}
-                    {aStatus === 'completed' && (
-                      <div className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 py-2 text-xs font-semibold text-emerald-700">
-                        <CheckCircle2 className="h-4 w-4" />
-                        Servicio completado
-                      </div>
-                    )}
                   </div>
                 );
               })}
             </div>
 
-            <Separator />
+          </div>
 
-            {/* Notes section */}
-            <div className="px-3.5 py-3 flex-1 flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold text-foreground">Notas internas</span>
+          <div className="order-3 rounded-lg border bg-card shadow-sm flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-3.5 py-3 border-b shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <h3 className="font-semibold text-sm text-foreground">Notas internas</h3>
               </div>
+            </div>
+            <div className="px-3.5 py-3 flex-1 flex flex-col gap-2">
               <Textarea
                 placeholder="Color utilizado, productos recomendados, observaciones del cliente…"
-                className="flex-1 min-h-[84px] resize-none text-xs bg-muted/20 border-muted focus:bg-background"
+                className="flex-1 min-h-[120px] resize-none text-xs bg-muted/20 border-muted focus:bg-background"
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
               />
@@ -1007,6 +928,56 @@ export default function MyDayPage() {
                   Guardar nota
                 </Button>
               </div>
+            </div>
+          </div>
+
+          <div className="order-4 rounded-lg border bg-card shadow-sm flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-3.5 py-3 border-b shrink-0">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Próximas visitas</h4>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                {upcomingVisits.length}
+              </span>
+            </div>
+            <div className="px-3.5 py-3 flex-1">
+              {loadingClient ? (
+                <div className="mt-2 h-10 animate-pulse rounded-md bg-muted" />
+              ) : upcomingVisits.length === 0 ? (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                  <ImageOff className="h-3.5 w-3.5" />
+                  No hay próximas visitas agendadas.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {upcomingVisits.map(visit => (
+                    <div key={visit.id} className="rounded-md border bg-muted/30 px-2.5 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-foreground">
+                          {format(new Date(visit.date), 'EEE d MMM, HH:mm', { locale: es })}
+                        </span>
+                        <span className={cn(
+                          'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                          getStatusInfo(visit.status).color
+                        )}>
+                          {getStatusInfo(visit.status).label}
+                        </span>
+                      </div>
+                      {(visit.serviceNames ?? []).filter(Boolean).length > 0 && (
+                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                          {(visit.serviceNames ?? []).filter(Boolean).join(' • ')}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="mt-auto border-t px-3.5 py-2.5">
+              <Button variant="ghost" size="sm" className="w-full justify-between text-xs text-muted-foreground hover:text-foreground" asChild>
+                <Link href={`/admin/clients/${encodeURIComponent(selectedAppt.customerEmail)}`}>
+                  Ver ficha completa
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
             </div>
           </div>
 
