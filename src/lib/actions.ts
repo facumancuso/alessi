@@ -251,27 +251,50 @@ export async function revertAppointment(id: string) {
 export async function updateAssignmentStatus(
     appointmentId: string,
     employeeId: string,
-    status: 'pending' | 'in_progress' | 'completed'
+    status: 'pending' | 'in_progress' | 'completed',
+    assignmentIdx?: number
 ): Promise<void> {
     await connectToDatabase();
-    const updated = await AppointmentModel.findByIdAndUpdate(
-        appointmentId,
-        { $set: { 'assignments.$[elem].status': status } },
-        { arrayFilters: [{ 'elem.employeeId': employeeId }], new: true }
-    );
+    const appointment = await AppointmentModel.findById(appointmentId);
+    if (!appointment || !appointment.assignments || appointment.assignments.length === 0) {
+        throw new Error('Turno no encontrado.');
+    }
 
-    // Si todas las assignments están completadas, pasar a completed para que aparezca en "Por Cobrar"
-    if (status === 'completed' && updated) {
-        const allDone = (updated.assignments || []).every(
-            (a: { status?: string }) => a.status === 'completed'
-        );
-        if (allDone) {
-            await AppointmentModel.findByIdAndUpdate(appointmentId, { $set: { status: 'completed' } });
+    let targetIndex = -1;
+    if (typeof assignmentIdx === 'number') {
+        const assignment = appointment.assignments[assignmentIdx];
+        if (assignment && assignment.employeeId === employeeId) {
+            targetIndex = assignmentIdx;
         }
     }
 
+    if (targetIndex === -1) {
+        targetIndex = appointment.assignments.findIndex(a => a.employeeId === employeeId);
+    }
+
+    if (targetIndex === -1) {
+        throw new Error('Servicio no encontrado para este profesional.');
+    }
+
+    appointment.assignments[targetIndex].status = status;
+
+    const assignmentStatuses = (appointment.assignments || []).map(a => a.status ?? 'pending');
+    const allCompleted = assignmentStatuses.length > 0 && assignmentStatuses.every(s => s === 'completed');
+    const anyInProgress = assignmentStatuses.some(s => s === 'in_progress');
+
+    if (allCompleted) {
+        appointment.status = 'completed';
+    } else if (anyInProgress) {
+        appointment.status = 'in_progress';
+    } else {
+        appointment.status = 'waiting';
+    }
+
+    await appointment.save();
+
     revalidatePath('/admin/my-day');
     revalidatePath('/admin/agenda');
+    revalidatePath('/admin');
     revalidatePath('/admin/billing');
 }
 
