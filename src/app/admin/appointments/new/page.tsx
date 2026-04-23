@@ -603,7 +603,7 @@ export default function NewAppointmentPage() {
                                                     className="h-8 text-xs"
                                                     value={assignment.duration || 0}
                                                     onChange={(e) => updateAssignment(index, 'duration', parseInt(e.target.value, 10))}
-                                                    disabled
+                                                    disabled={!rowCanEdit}
                                                 />
                                             </div>
                                         </div>
