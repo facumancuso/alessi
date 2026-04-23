@@ -35,7 +35,7 @@ async function withReadCache<T>(key: string, fetcher: () => Promise<T>, ttlMs = 
   return promise;
 }
 
-export function clearDataReadCache() {
+export async function clearDataReadCache() {
   readCache.clear();
   inFlightReads.clear();
 }

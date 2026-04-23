@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Logo } from '@/components/icons';
-import { useState, useContext } from 'react';
+import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -99,7 +99,7 @@ export default function LoginForm({ users, dbError = false }: { users: User[]; d
                                         className="w-full justify-between font-normal"
                                     >
                                         {email ? (
-                                            users.find((user) => user.email === email)?.name
+                                            users.find((user) => user.email.toLowerCase() === email.toLowerCase())?.name
                                         ) : (
                                             "Seleccionar usuario..."
                                         )}
@@ -117,7 +117,16 @@ export default function LoginForm({ users, dbError = false }: { users: User[]; d
                                                         key={user.id}
                                                         value={user.email}
                                                         onSelect={(currentValue) => {
-                                                            setEmail(currentValue === email ? "" : currentValue)
+                                                            const selectedUser = users.find(
+                                                                (u) => u.email.toLowerCase() === currentValue.toLowerCase()
+                                                            );
+                                                            if (!selectedUser) {
+                                                                setEmail("");
+                                                            } else if (selectedUser.email.toLowerCase() === email.toLowerCase()) {
+                                                                setEmail("");
+                                                            } else {
+                                                                setEmail(selectedUser.email);
+                                                            }
                                                             setOpen(false)
                                                         }}
                                                     >
