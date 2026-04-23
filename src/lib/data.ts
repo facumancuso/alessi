@@ -4,6 +4,42 @@ import { connectToDatabase } from './mongodb';
 import { ServiceModel, ProductModel, ClientModel, UserModel, AppointmentModel, SettingsModel } from './models';
 import type { Service, Appointment, Product, Client, User } from './types';
 
+const READ_CACHE_TTL_MS = 10_000;
+const readCache = new Map<string, { value: unknown; expiresAt: number }>();
+const inFlightReads = new Map<string, Promise<unknown>>();
+
+async function withReadCache<T>(key: string, fetcher: () => Promise<T>, ttlMs = READ_CACHE_TTL_MS): Promise<T> {
+  const now = Date.now();
+  const cached = readCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.value as T;
+  }
+
+  const inFlight = inFlightReads.get(key);
+  if (inFlight) {
+    return inFlight as Promise<T>;
+  }
+
+  const promise = fetcher()
+    .then((result) => {
+      readCache.set(key, { value: result, expiresAt: Date.now() + ttlMs });
+      inFlightReads.delete(key);
+      return result;
+    })
+    .catch((error) => {
+      inFlightReads.delete(key);
+      throw error;
+    });
+
+  inFlightReads.set(key, promise as Promise<unknown>);
+  return promise;
+}
+
+export function clearDataReadCache() {
+  readCache.clear();
+  inFlightReads.clear();
+}
+
 function normalizeAppointmentDate(dateValue: unknown): string {
   if (typeof dateValue === 'string') return dateValue;
   if (dateValue instanceof Date) return dateValue.toISOString();
@@ -18,27 +54,33 @@ function normalizeAppointmentDate(dateValue: unknown): string {
 
 // ========= SERVICE FUNCTIONS =========
 export async function getServices(): Promise<Service[]> {
-  await connectToDatabase();
-  const services = await ServiceModel.find({}).lean();
-  return services.map(s => ({ ...s, id: s._id.toString(), _id: undefined } as unknown as Service));
+  return withReadCache('services:all', async () => {
+    await connectToDatabase();
+    const services = await ServiceModel.find({}).lean();
+    return services.map(s => ({ ...s, id: s._id.toString(), _id: undefined } as unknown as Service));
+  });
 }
 
 export async function getServiceById(id: string): Promise<Service | null> {
-  await connectToDatabase();
-  const service = await ServiceModel.findById(id).lean();
-  if (!service) return null;
-  return { ...service, id: service._id.toString(), _id: undefined } as unknown as Service;
+  return withReadCache(`services:id:${id}`, async () => {
+    await connectToDatabase();
+    const service = await ServiceModel.findById(id).lean();
+    if (!service) return null;
+    return { ...service, id: service._id.toString(), _id: undefined } as unknown as Service;
+  });
 }
 
 export async function createService(service: Omit<Service, 'id'>): Promise<Service> {
   await connectToDatabase();
   const newService = await ServiceModel.create(service);
+  clearDataReadCache();
   return { ...newService.toObject(), id: newService._id.toString(), _id: undefined } as unknown as Service;
 }
 
 export async function updateService(id: string, serviceUpdate: Partial<Omit<Service, 'id'>>): Promise<Service | null> {
   await connectToDatabase();
   const updated = await ServiceModel.findByIdAndUpdate(id, serviceUpdate, { new: true }).lean();
+  clearDataReadCache();
   if (!updated) return null;
   return { ...updated, id: updated._id.toString(), _id: undefined } as unknown as Service;
 }
@@ -46,12 +88,14 @@ export async function updateService(id: string, serviceUpdate: Partial<Omit<Serv
 export async function deleteService(id: string): Promise<boolean> {
   await connectToDatabase();
   await ServiceModel.findByIdAndDelete(id);
+  clearDataReadCache();
   return true;
 }
 
 export async function deleteAllServices(): Promise<{ deletedCount: number }> {
   await connectToDatabase();
   const result = await ServiceModel.deleteMany({});
+  clearDataReadCache();
   return { deletedCount: result.deletedCount || 0 };
 }
 
@@ -64,32 +108,39 @@ export async function batchCreateServices(services: Partial<Service>[]): Promise
     price: Math.round(Number(s.price || 0))
   }));
   const result = await ServiceModel.insertMany(newServices);
+  clearDataReadCache();
   return { createdCount: result.length };
 }
 
 // ========= PRODUCT FUNCTIONS =========
 export async function getProducts(): Promise<Product[]> {
-  await connectToDatabase();
-  const products = await ProductModel.find({}).lean();
-  return products.map(p => ({ ...p, id: p._id.toString(), _id: undefined } as unknown as Product));
+  return withReadCache('products:all', async () => {
+    await connectToDatabase();
+    const products = await ProductModel.find({}).lean();
+    return products.map(p => ({ ...p, id: p._id.toString(), _id: undefined } as unknown as Product));
+  });
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
-  await connectToDatabase();
-  const product = await ProductModel.findById(id).lean();
-  if (!product) return null;
-  return { ...product, id: product._id.toString(), _id: undefined } as unknown as Product;
+  return withReadCache(`products:id:${id}`, async () => {
+    await connectToDatabase();
+    const product = await ProductModel.findById(id).lean();
+    if (!product) return null;
+    return { ...product, id: product._id.toString(), _id: undefined } as unknown as Product;
+  });
 }
 
 export async function createProduct(product: Omit<Product, 'id'>): Promise<Product> {
   await connectToDatabase();
   const newProduct = await ProductModel.create(product);
+  clearDataReadCache();
   return { ...newProduct.toObject(), id: newProduct._id.toString(), _id: undefined } as unknown as Product;
 }
 
 export async function updateProduct(id: string, productUpdate: Partial<Omit<Product, 'id'>>): Promise<Product | null> {
   await connectToDatabase();
   const updated = await ProductModel.findByIdAndUpdate(id, productUpdate, { new: true }).lean();
+  clearDataReadCache();
   if (!updated) return null;
   return { ...updated, id: updated._id.toString(), _id: undefined } as unknown as Product;
 }
@@ -97,12 +148,14 @@ export async function updateProduct(id: string, productUpdate: Partial<Omit<Prod
 export async function deleteProduct(id: string): Promise<boolean> {
   await connectToDatabase();
   await ProductModel.findByIdAndDelete(id);
+  clearDataReadCache();
   return true;
 }
 
 export async function deleteAllProducts(): Promise<{ deletedCount: number }> {
   await connectToDatabase();
   const result = await ProductModel.deleteMany({});
+  clearDataReadCache();
   return { deletedCount: result.deletedCount || 0 };
 }
 
@@ -114,12 +167,14 @@ export async function batchCreateProducts(products: Partial<Product>[]): Promise
     price: Math.round(Number(p.price || 0))
   }));
   const result = await ProductModel.insertMany(newProducts);
+  clearDataReadCache();
   return { createdCount: result.length };
 }
 
 // ========= APPOINTMENT FUNCTIONS =========
 export async function getAppointments(status?: Appointment['status']): Promise<Appointment[]> {
-  try {
+  return withReadCache(`appointments:status:${status || 'all'}`, async () => {
+    try {
     await connectToDatabase();
     const filter = status ? { status } : {};
     const appointments = await AppointmentModel.find(filter).lean();
@@ -157,27 +212,30 @@ export async function getAppointments(status?: Appointment['status']): Promise<A
         throw mapError;
       }
     });
-  } catch (error) {
-    console.error('Error in getAppointments:', error);
-    throw error;
-  }
+    } catch (error) {
+      console.error('Error in getAppointments:', error);
+      throw error;
+    }
+  });
 }
 
 export async function getAppointmentById(id: string): Promise<Appointment | undefined> {
-  await connectToDatabase();
-  const appointment = await AppointmentModel.findById(id).lean();
-  if (!appointment) return undefined;
+  return withReadCache(`appointments:id:${id}`, async () => {
+    await connectToDatabase();
+    const appointment = await AppointmentModel.findById(id).lean();
+    if (!appointment) return undefined;
 
-  const allServices = await getServices();
-  const servicesMap = new Map(allServices.map(s => [s.id, s.name]));
-  const serviceIds = (appointment.assignments || []).map(a => a.serviceId);
+    const allServices = await getServices();
+    const servicesMap = new Map(allServices.map(s => [s.id, s.name]));
+    const serviceIds = (appointment.assignments || []).map(a => a.serviceId);
 
-  return {
-    ...appointment,
-    id: appointment._id!.toString(),
-    _id: undefined,
-    serviceNames: serviceIds.map(id => servicesMap.get(id) || 'Servicio Desconocido')
-  } as unknown as Appointment;
+    return {
+      ...appointment,
+      id: appointment._id!.toString(),
+      _id: undefined,
+      serviceNames: serviceIds.map(id => servicesMap.get(id) || 'Servicio Desconocido')
+    } as unknown as Appointment;
+  });
 }
 
 export async function createAppointment(data: Partial<Omit<Appointment, 'id'>> & { status?: Appointment['status'] }): Promise<Appointment> {
@@ -218,6 +276,8 @@ export async function createAppointment(data: Partial<Omit<Appointment, 'id'>> &
     mobilePhone: normalizedCustomerPhone || undefined,
   });
 
+  clearDataReadCache();
+
   return { ...newAppointment.toObject(), id: newAppointment._id.toString(), _id: undefined } as unknown as Appointment;
 }
 
@@ -227,6 +287,7 @@ export async function updateAppointment(id: string, data: Partial<Appointment>):
   const updateData = { ...data };
 
   const updated = await AppointmentModel.findByIdAndUpdate(id, updateData, { new: true, upsert: true }).lean();
+  clearDataReadCache();
   if (!updated) return undefined;
 
   return { ...updated, id: updated._id!.toString(), _id: undefined } as unknown as Appointment;
@@ -235,6 +296,7 @@ export async function updateAppointment(id: string, data: Partial<Appointment>):
 export async function cancelAppointment(id: string): Promise<Appointment | undefined> {
   await connectToDatabase();
   const updated = await AppointmentModel.findByIdAndUpdate(id, { status: 'cancelled' }, { new: true }).lean();
+  clearDataReadCache();
   if (!updated) return undefined;
   return { ...updated, id: updated._id!.toString(), _id: undefined } as unknown as Appointment;
 }
@@ -242,6 +304,7 @@ export async function cancelAppointment(id: string): Promise<Appointment | undef
 export async function deleteAppointment(id: string): Promise<boolean> {
   await connectToDatabase();
   await AppointmentModel.findByIdAndDelete(id);
+  clearDataReadCache();
   return true;
 }
 
@@ -311,6 +374,7 @@ export async function batchCreateAppointmentsData(
   }));
 
   const result = await AppointmentModel.insertMany(newAppointments);
+  clearDataReadCache();
 
   const createdAppointments = result.map(doc => ({
     ...doc.toObject(),
@@ -330,13 +394,16 @@ export async function updateClientAppointmentsStatus(appointmentIds: string[], s
     { _id: { $in: appointmentIds } },
     { $set: { status } }
   );
+  clearDataReadCache();
 }
 
 // ========= CLIENT FUNCTIONS =========
 export async function getClients(): Promise<Client[]> {
-  await connectToDatabase();
-  const clients = await ClientModel.find({}).lean();
-  return clients.map(c => ({ ...c, id: c._id.toString(), _id: undefined } as unknown as Client));
+  return withReadCache('clients:all', async () => {
+    await connectToDatabase();
+    const clients = await ClientModel.find({}).lean();
+    return clients.map(c => ({ ...c, id: c._id.toString(), _id: undefined } as unknown as Client));
+  });
 }
 
 export async function searchClients(query: string, limit = 40): Promise<Client[]> {
@@ -365,10 +432,12 @@ export async function searchClients(query: string, limit = 40): Promise<Client[]
 }
 
 export async function getClientByEmail(email: string): Promise<Client | undefined> {
-  await connectToDatabase();
-  const client = await ClientModel.findOne({ email }).lean();
-  if (!client) return undefined;
-  return { ...client, id: client._id.toString(), _id: undefined } as unknown as Client;
+  return withReadCache(`clients:email:${email}`, async () => {
+    await connectToDatabase();
+    const client = await ClientModel.findOne({ email }).lean();
+    if (!client) return undefined;
+    return { ...client, id: client._id.toString(), _id: undefined } as unknown as Client;
+  });
 }
 
 export async function createClient(clientData: Partial<Omit<Client, 'id'>>): Promise<Client> {
@@ -383,6 +452,7 @@ export async function createClient(clientData: Partial<Omit<Client, 'id'>>): Pro
         clientData,
         { new: true, runValidators: false }
       ).lean();
+      clearDataReadCache();
       return { ...updated!, id: updated!._id.toString(), _id: undefined } as unknown as Client;
     }
   }
@@ -403,6 +473,7 @@ export async function createClient(clientData: Partial<Omit<Client, 'id'>>): Pro
   }
 
   const newClient = await ClientModel.create(clientData);
+  clearDataReadCache();
   return { ...newClient.toObject(), id: newClient._id.toString(), _id: undefined } as unknown as Client;
 }
 
@@ -449,6 +520,8 @@ export async function batchCreateClients(clients: Partial<Client>[]): Promise<{ 
     }
   }
 
+  clearDataReadCache();
+
   return { createdCount, updatedCount };
 }
 
@@ -460,23 +533,27 @@ export async function updateClient(id: string, clientUpdate: Partial<Client>): P
   if (clientUpdate.mobilePhone !== undefined && existing?.email) {
     await AppointmentModel.updateMany({ customerEmail: existing.email }, { customerPhone: clientUpdate.mobilePhone });
   }
+  clearDataReadCache();
   return { ...updated, id: updated._id.toString(), _id: undefined } as unknown as Client;
 }
 
 export async function deleteClientFromDB(id: string): Promise<boolean> {
   await connectToDatabase();
   await ClientModel.findByIdAndDelete(id);
+  clearDataReadCache();
   return true;
 }
 
 export async function deleteAllClients(): Promise<{ deletedCount: number }> {
   await connectToDatabase();
   const result = await ClientModel.deleteMany({});
+  clearDataReadCache();
   return { deletedCount: result.deletedCount || 0 };
 }
 
 export async function getAppointmentsByClient(email: string): Promise<Appointment[]> {
-  try {
+  return withReadCache(`appointments:client:${email}`, async () => {
+    try {
     await connectToDatabase();
     const appointments = await AppointmentModel.find({ customerEmail: email }).lean();
 
@@ -510,46 +587,62 @@ export async function getAppointmentsByClient(email: string): Promise<Appointmen
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return sorted;
-  } catch (error) {
-    console.error('Error in getAppointmentsByClient:', error);
-    throw error;
-  }
+    } catch (error) {
+      console.error('Error in getAppointmentsByClient:', error);
+      throw error;
+    }
+  });
 }
 
 // ========= USER FUNCTIONS =========
 export async function getUsers(): Promise<User[]> {
-  await connectToDatabase();
-  const users = await UserModel.find({}).select('-password').lean();
-  return users.map(u => ({ ...u, id: u._id.toString(), _id: undefined } as unknown as User));
+  return withReadCache('users:all', async () => {
+    await connectToDatabase();
+    const users = await UserModel.find({}).select('-password').lean();
+    return users.map(u => ({ ...u, id: u._id.toString(), _id: undefined } as unknown as User));
+  });
 }
 
 export async function getActiveUsers(): Promise<User[]> {
-  await connectToDatabase();
-  const users = await UserModel.find({ isActive: true }).select('-password').lean();
-  return users.map(u => ({ ...u, id: u._id.toString(), _id: undefined } as unknown as User));
+  return withReadCache('users:active', async () => {
+    await connectToDatabase();
+    const users = await UserModel.find({
+      $or: [
+        { isActive: true },
+        { isActive: { $exists: false } },
+        { isActive: null },
+      ],
+    }).select('-password').lean();
+    return users.map(u => ({ ...u, id: u._id.toString(), _id: undefined } as unknown as User));
+  });
 }
 
 export async function getUserByEmail(email: string): Promise<User | null> {
-  await connectToDatabase();
-  const user = await UserModel.findOne({ email }).select('-password').lean();
-  if (!user) return null;
-  return { ...user, id: user._id.toString(), _id: undefined } as unknown as User;
+  return withReadCache(`users:email:${email}`, async () => {
+    await connectToDatabase();
+    const user = await UserModel.findOne({ email }).select('-password').lean();
+    if (!user) return null;
+    return { ...user, id: user._id.toString(), _id: undefined } as unknown as User;
+  });
 }
 
 // ========= SETTINGS FUNCTIONS =========
 export async function getSettings() {
-  await connectToDatabase();
-  let settings = await SettingsModel.findOne({}).lean();
-  if (!settings) {
-    // Create default settings
-    const newSettings = await SettingsModel.create({ bookingClosingHours: 24 });
-    return { ...newSettings.toObject(), spamProtection: true };
-  }
-  return { ...settings, spamProtection: true };
+  return withReadCache('settings:singleton', async () => {
+    await connectToDatabase();
+    let settings = await SettingsModel.findOne({}).lean();
+    if (!settings) {
+      // Create default settings
+      const newSettings = await SettingsModel.create({ bookingClosingHours: 24 });
+      return { ...newSettings.toObject(), spamProtection: true };
+    }
+    return { ...settings, spamProtection: true };
+  });
 }
 
 export async function updateSettings(newSettings: any) {
   await connectToDatabase();
   const updated = await SettingsModel.findOneAndUpdate({}, newSettings, { new: true, upsert: true }).lean();
+  clearDataReadCache();
   return updated;
 }

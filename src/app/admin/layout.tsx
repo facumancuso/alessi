@@ -18,10 +18,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Logo } from "@/components/icons";
-import { LayoutDashboard, Settings, XCircle, LogOut, Users, CalendarCheck, Package, Scissors, User, CheckCircle, Briefcase, TrendingUp, DollarSign, Download, Loader2, DatabaseZap, Trash2, Edit, Upload as UploadIcon } from "lucide-react";
+import { LayoutDashboard, Settings, XCircle, LogOut, Users, CalendarCheck, Package, Scissors, User, CheckCircle, Briefcase, TrendingUp, DollarSign, Download, Loader2 } from "lucide-react";
 import { usePathname, useRouter } from 'next/navigation';
 import { getUserByEmail, getUsers } from "@/lib/data";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { User as UserType } from "@/lib/types";
 import { UserContext } from "./user-context";
 
@@ -31,7 +31,6 @@ const routePermissions: Record<string, UserType['role'][]> = {
     '/admin/agenda': ['Superadmin', 'Gerente', 'Recepcion', 'Peluquero'],
     '/admin/appointments': ['Superadmin', 'Gerente', 'Recepcion'],
     '/admin/appointments/new': ['Superadmin', 'Gerente', 'Recepcion', 'Peluquero'],
-    '/admin/appointments/fast-entry': ['Superadmin', 'Gerente', 'Recepcion'],
     '/admin/billing': ['Superadmin', 'Gerente', 'Recepcion'],
     '/admin/cancellations': ['Superadmin', 'Gerente', 'Recepcion'],
     '/admin/clients': ['Superadmin', 'Gerente', 'Recepcion'],
@@ -42,9 +41,6 @@ const routePermissions: Record<string, UserType['role'][]> = {
     '/admin/employees': ['Superadmin', 'Gerente', 'Recepcion'],
     '/admin/settings': ['Superadmin'],
     '/admin/backup': ['Superadmin', 'Gerente'],
-    '/admin/import': ['Superadmin', 'Gerente'],
-    '/admin/seed': [], // Allow all for now
-    '/admin/cleanup': ['Superadmin', 'Gerente'],
 };
 
 export default function AdminLayout({
@@ -60,13 +56,6 @@ export default function AdminLayout({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // If we are on the seed page, bypass auth checks
-    if (pathname === '/admin/seed' || pathname === '/admin/seed-clients' || pathname === '/admin/import') {
-        setIsAuthorized(true);
-        setLoading(false);
-        return;
-    }
-    
     const userJson = sessionStorage.getItem('currentUser');
     if (userJson) {
         const userProfile = JSON.parse(userJson) as UserType;
@@ -111,11 +100,6 @@ export default function AdminLayout({
     router.push('/login');
   };
 
-  // If it's a seed page, render it without the layout
-  if (pathname === '/admin/seed' || pathname === '/admin/cleanup' || pathname === '/admin/seed-clients' || pathname === '/admin/appointments/fast-entry' || pathname === '/admin/import') {
-      return <main className="p-4 md:p-6">{children}</main>;
-  }
-  
   const userRole = currentUser?.role;
 
   const canViewDashboard = userRole === 'Superadmin' || userRole === 'Gerente' || userRole === 'Recepcion';
@@ -128,6 +112,45 @@ export default function AdminLayout({
   const canAccessBackup = userRole === 'Superadmin' || userRole === 'Gerente';
   const canViewAgenda = userRole === 'Superadmin' || userRole === 'Gerente' || userRole === 'Recepcion' || userRole === 'Peluquero';
   const isHairdresser = userRole === 'Peluquero';
+
+  const prefetchRoutes = useMemo(() => {
+    if (!userRole) return [] as string[];
+
+    const routes: string[] = [];
+
+    if (canViewDashboard) routes.push('/admin');
+    if (isHairdresser) routes.push('/admin/my-day');
+    if (canViewAgenda) routes.push('/admin/agenda');
+    if (canManageAppointments) routes.push('/admin/billing', '/admin/cancellations', '/admin/appointments/new');
+    if (canManageClients) routes.push('/admin/clients');
+    if (canManageEmployees) routes.push('/admin/employees');
+    if (canManageInventory) routes.push('/admin/services', '/admin/products');
+    if (canManageUsers) routes.push('/admin/users');
+    if (canAccessBackup) routes.push('/admin/backup');
+    if (canAccessSettings) routes.push('/admin/settings');
+
+    return routes;
+  }, [
+    userRole,
+    canViewDashboard,
+    isHairdresser,
+    canViewAgenda,
+    canManageAppointments,
+    canManageClients,
+    canManageEmployees,
+    canManageInventory,
+    canManageUsers,
+    canAccessBackup,
+    canAccessSettings,
+  ]);
+
+  useEffect(() => {
+    if (prefetchRoutes.length === 0) return;
+
+    for (const route of prefetchRoutes) {
+      router.prefetch(route);
+    }
+  }, [prefetchRoutes, router]);
   
   if (loading || !isAuthorized) {
     return <div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin"/></div>;
@@ -179,14 +202,6 @@ export default function AdminLayout({
               )}
               {canManageAppointments && (
               <>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={pathname === '/admin/appointments/fast-entry'}>
-                    <Link href="/admin/appointments/fast-entry">
-                      <Edit />
-                      Carga Rápida
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={pathname === '/admin/billing'}>
                     <Link href="/admin/billing">
@@ -272,14 +287,6 @@ export default function AdminLayout({
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={pathname === '/admin/import'}>
-                      <Link href="/admin/import">
-                        <UploadIcon />
-                        Importar
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
                 </>
               )}
               {canAccessSettings && (
@@ -289,22 +296,6 @@ export default function AdminLayout({
                             <Link href="/admin/settings">
                             <Settings />
                             Configuración
-                            </Link>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                     <SidebarMenuItem>
-                        <SidebarMenuButton asChild isActive={pathname === '/admin/cleanup'}>
-                            <Link href="/admin/cleanup">
-                            <Trash2 />
-                            Limpieza
-                            </Link>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton asChild isActive={pathname === '/admin/seed'}>
-                            <Link href="/admin/seed">
-                            <DatabaseZap />
-                            Inicializar DB
                             </Link>
                         </SidebarMenuButton>
                     </SidebarMenuItem>

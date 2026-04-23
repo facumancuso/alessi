@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { connectToDatabase } from './mongodb';
 import { UserModel } from './models';
 import type { User } from './types';
+import { clearDataReadCache } from './data';
 import { cookies } from 'next/headers';
 import jwt from 'jsonwebtoken';
 
@@ -46,6 +47,8 @@ export async function createUser(userData: Partial<User & { password?: string }>
     isActive: userData.isActive ?? true,
   });
 
+  clearDataReadCache();
+
   return {
     id: newUser._id.toString(),
     name: newUser.name,
@@ -67,6 +70,8 @@ export async function updateUser(id: string, userUpdate: Partial<User & { passwo
 
   const updated = await UserModel.findByIdAndUpdate(id, updateData, { new: true }).select('-password').lean();
 
+  clearDataReadCache();
+
   if (!updated) return undefined;
 
   return {
@@ -81,6 +86,7 @@ export async function updateUser(id: string, userUpdate: Partial<User & { passwo
 export async function deleteUser(id: string): Promise<boolean> {
   await connectToDatabase();
   await UserModel.findByIdAndDelete(id);
+  clearDataReadCache();
   return true;
 }
 
