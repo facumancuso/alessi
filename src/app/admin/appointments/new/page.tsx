@@ -69,7 +69,6 @@ export default function NewAppointmentPage() {
     const isReceptionOrAdmin = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
     const isEmployee = currentUser?.role === 'Peluquero';
     const canEdit = isReceptionOrAdmin || currentUser?.role === 'Peluquero';
-    const isAppendOnlyEmployeeEdit = isEmployee && isEditing;
 
     useEffect(() => {
         setIsLoading(true);
@@ -312,7 +311,6 @@ export default function NewAppointmentPage() {
     }
 
     const removeAssignment = (index: number) => {
-        if (isAppendOnlyEmployeeEdit && index < initialAssignmentsCount) return;
         setAssignments(prev => prev.filter((_, i) => i !== index));
     }
 
@@ -491,15 +489,15 @@ export default function NewAppointmentPage() {
                                 </div>
                             )}
                             {assignments.map((assignment, index) => {
-                                const isLockedExistingAssignment = isAppendOnlyEmployeeEdit && index < initialAssignmentsCount;
-                                const rowCanEdit = canEdit && !isLockedExistingAssignment;
+                                const isExistingAssignment = isEditing && index < initialAssignmentsCount;
+                                const rowCanEdit = canEdit;
                                 const serviceDetail = allServices.find(s => s.id === assignment.serviceId);
                                 return (
                                     <div
                                         key={index}
                                         className={cn(
                                             "rounded-xl border p-3 space-y-2.5 transition-colors",
-                                            isLockedExistingAssignment ? "bg-muted/30" : "bg-card"
+                                            isExistingAssignment ? "bg-muted/20" : "bg-card"
                                         )}
                                     >
                                         {/* Row header */}
@@ -509,21 +507,19 @@ export default function NewAppointmentPage() {
                                                 {serviceDetail && (
                                                     <span className="text-xs font-medium truncate max-w-[180px]">{serviceDetail.name}</span>
                                                 )}
-                                                {isLockedExistingAssignment && (
-                                                    <Badge variant="secondary" className="text-xs h-4.5 px-1.5 py-0">Bloqueado</Badge>
+                                                {isExistingAssignment && (
+                                                    <Badge variant="secondary" className="text-xs h-4.5 px-1.5 py-0">Hora fija</Badge>
                                                 )}
                                             </div>
-                                            {!isLockedExistingAssignment && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                                    onClick={() => removeAssignment(index)}
-                                                    disabled={!rowCanEdit}
-                                                >
-                                                    <X className="h-3.5 w-3.5" />
-                                                </Button>
-                                            )}
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                                onClick={() => removeAssignment(index)}
+                                                disabled={!rowCanEdit}
+                                            >
+                                                <X className="h-3.5 w-3.5" />
+                                            </Button>
                                         </div>
 
                                         {/* Fields grid */}
@@ -596,7 +592,7 @@ export default function NewAppointmentPage() {
                                                     className="h-8 text-xs"
                                                     value={assignment.time || ''}
                                                     onChange={(e) => updateAssignment(index, 'time', e.target.value)}
-                                                    disabled={isLockedExistingAssignment || (index === 0 && isEditing ? !isReceptionOrAdmin : !canEdit)}
+                                                    disabled={isExistingAssignment || (index === 0 && isEditing ? !isReceptionOrAdmin : !canEdit)}
                                                 />
                                             </div>
                                             <div className="space-y-1">
@@ -606,7 +602,7 @@ export default function NewAppointmentPage() {
                                                     className="h-8 text-xs"
                                                     value={assignment.duration || 0}
                                                     onChange={(e) => updateAssignment(index, 'duration', parseInt(e.target.value, 10))}
-                                                    disabled={!rowCanEdit}
+                                                    disabled
                                                 />
                                             </div>
                                         </div>
@@ -677,9 +673,9 @@ export default function NewAppointmentPage() {
                                     </div>
                                 );
                             })}
-                            {isAppendOnlyEmployeeEdit && assignments.length > 0 && (
+                            {isEmployee && assignments.length > 0 && (
                                 <p className="text-xs text-muted-foreground pt-0.5 px-1">
-                                    Las líneas existentes quedan bloqueadas. Solo podés agregar nuevos servicios.
+                                    Podés editar servicios y profesionales. La hora de las líneas ya guardadas queda fija y la duración se ajusta automáticamente.
                                 </p>
                             )}
                         </CardContent>

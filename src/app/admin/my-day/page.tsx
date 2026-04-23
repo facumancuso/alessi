@@ -134,8 +134,12 @@ export default function MyDayPage() {
 
       try {
         const all = await getAppointments();
-        
-        const todayAppointments = all
+
+        const requestedAppointment = requestedAppointmentId
+          ? all.find(appt => appt.id === requestedAppointmentId)
+          : undefined;
+
+        const employeeAppointments = all
           .filter(appt => 
             (appt.assignments || []).some(a => a.employeeId === currentUser.id) && 
             isToday(new Date(appt.date)) &&
@@ -151,6 +155,16 @@ export default function MyDayPage() {
             };
             return getEmployeeTime(a) - getEmployeeTime(b);
           });
+
+        const shouldIncludeRequestedAppointment =
+          requestedAppointment &&
+          isToday(new Date(requestedAppointment.date)) &&
+          requestedAppointment.status !== 'cancelled' &&
+          !employeeAppointments.some(appt => appt.id === requestedAppointment.id);
+
+        const todayAppointments = shouldIncludeRequestedAppointment
+          ? [...employeeAppointments, requestedAppointment].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          : employeeAppointments;
 
         // Notify employee when a known appointment transitions to waiting
         const previousStatuses = previousStatusesRef.current;
@@ -197,7 +211,7 @@ export default function MyDayPage() {
       const interval = setInterval(() => fetchAppointments(false), 15000);
       return () => clearInterval(interval);
     }
-  }, [currentUser, toast]);
+  }, [currentUser, toast, requestedAppointmentId]);
 
   useEffect(() => {
     if (!dailyAppointments.length) return;
@@ -438,7 +452,6 @@ export default function MyDayPage() {
   };
 
   const removeDraftAssignment = (index: number) => {
-    if (index < initialAssignmentsCount) return;
     setDraftAssignments(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -450,8 +463,7 @@ export default function MyDayPage() {
   const handleSaveTurnEdits = () => {
     if (!selectedAppt || !currentUser) return;
 
-    const addedDrafts = draftAssignments.filter((_, idx) => idx >= initialAssignmentsCount);
-    if (addedDrafts.some(a => !a.employeeId || !a.serviceId || !a.time || !a.duration)) {
+    if (draftAssignments.some(a => !a.employeeId || !a.serviceId || !a.time || !a.duration)) {
       toast({
         title: 'Faltan datos',
         description: 'Completá profesional, servicio, hora y duración para guardar cambios del turno.',
@@ -800,7 +812,7 @@ export default function MyDayPage() {
                       </span>
                     </div>
 
-                    {isEditingTurn && !isOriginalAssignment && (
+                    {isEditingTurn && (
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <div className="space-y-1">
                           <label className="text-[11px] font-semibold text-muted-foreground">Profesional</label>
@@ -835,6 +847,7 @@ export default function MyDayPage() {
                             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                             value={editableAssignment.time}
                             onChange={(e) => updateDraftAssignment(idx, 'time', e.target.value)}
+                            disabled={isOriginalAssignment}
                           />
                         </div>
                         <div className="space-y-1 md:col-span-2">
@@ -844,6 +857,7 @@ export default function MyDayPage() {
                             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                             value={editableAssignment.duration ?? 0}
                             onChange={(e) => updateDraftAssignment(idx, 'duration', Number(e.target.value))}
+                            disabled
                           />
                         </div>
                         <div className="space-y-2 md:col-span-2">
@@ -888,7 +902,7 @@ export default function MyDayPage() {
                             className="text-destructive"
                             onClick={() => removeDraftAssignment(idx)}
                           >
-                            Quitar servicio agregado
+                            Quitar servicio
                           </Button>
                         </div>
                       </div>
