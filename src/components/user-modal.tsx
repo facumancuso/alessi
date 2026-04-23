@@ -70,7 +70,7 @@ export function UserModal({ isOpen, onClose, user }: UserModalProps) {
 
   const availableRoles = allRoles.filter(r => {
     if (currentUser?.role === 'Superadmin') return true;
-    if (currentUser?.role === 'Gerente') return r === 'Peluquero' || r === 'Recepcion';
+    if (currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion') return r === 'Peluquero' || r === 'Recepcion';
     return false;
   });
 

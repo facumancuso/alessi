@@ -69,6 +69,7 @@ export default function NewAppointmentPage() {
     const isReceptionOrAdmin = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
     const isEmployee = currentUser?.role === 'Peluquero';
     const canEdit = isReceptionOrAdmin || currentUser?.role === 'Peluquero';
+    const isAppendOnlyEmployeeEdit = isEmployee && isEditing;
 
     useEffect(() => {
         setIsLoading(true);
@@ -489,7 +490,7 @@ export default function NewAppointmentPage() {
                                 </div>
                             )}
                             {assignments.map((assignment, index) => {
-                                const isExistingAssignment = isEditing && index < initialAssignmentsCount;
+                                const isExistingAssignment = isAppendOnlyEmployeeEdit && index < initialAssignmentsCount;
                                 const rowCanEdit = canEdit;
                                 const serviceDetail = allServices.find(s => s.id === assignment.serviceId);
                                 return (

@@ -32,7 +32,7 @@ export default function UsersPage() {
     }, []);
 
     const handleOpenModal = (user: User | null) => {
-        if (!currentUser || (currentUser.role !== 'Superadmin' && currentUser.role !== 'Gerente')) return;
+        if (!currentUser || (currentUser.role !== 'Superadmin' && currentUser.role !== 'Gerente' && currentUser.role !== 'Recepcion')) return;
         setSelectedUser(user);
         setIsModalOpen(true);
     };
@@ -54,7 +54,7 @@ export default function UsersPage() {
     const canManageUser = (targetUserRole: User['role']) => {
         if (!currentUser) return false;
         if (currentUser.role === 'Superadmin') return true;
-        if (currentUser.role === 'Gerente') {
+        if (currentUser.role === 'Gerente' || currentUser.role === 'Recepcion') {
             return targetUserRole === 'Peluquero' || targetUserRole === 'Recepcion';
         }
         return false;
@@ -75,7 +75,7 @@ export default function UsersPage() {
                         Añade, edita y gestiona el acceso de los usuarios al sistema.
                     </CardDescription>
                 </div>
-                 {currentUser && (currentUser.role === 'Superadmin' || currentUser.role === 'Gerente') && (
+                 {currentUser && (currentUser.role === 'Superadmin' || currentUser.role === 'Gerente' || currentUser.role === 'Recepcion') && (
                     <Button onClick={() => handleOpenModal(null)}>
                         <PlusCircle className="mr-2 h-4 w-4" />
                         Añadir Usuario

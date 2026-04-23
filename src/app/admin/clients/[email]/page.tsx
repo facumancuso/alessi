@@ -319,7 +319,7 @@ export default function ClientDetailPage() {
 
   const canMarkWaiting = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
   const canProcessAppointment = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Peluquero';
-  const canManageClientData = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente';
+  const canManageClientData = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
   const isHairdresser = currentUser?.role === 'Peluquero';
 
   if (loading || !client) {
