@@ -882,11 +882,36 @@ export default function AgendaPage() {
   };
 
   const handleMoveAssignment = async (apptId: string, idx: number, newTime: string, newEmployeeId: string) => {
-      await moveAssignment(apptId, idx, newTime, newEmployeeId);
-      // Refrescar appointments localmente
-      const updated = await getAppointments();
-      setAppointments(updated);
-      toast({ title: 'Turno movido', description: `El turno fue actualizado correctamente.` });
+      const previousAppointments = appointments;
+
+      setAppointments(prev =>
+          prev.map(appt => {
+              if (appt.id !== apptId) return appt;
+              const nextAssignments = [...(appt.assignments || [])];
+              if (!nextAssignments[idx]) return appt;
+              nextAssignments[idx] = {
+                  ...nextAssignments[idx],
+                  time: newTime,
+                  employeeId: newEmployeeId,
+              };
+              return { ...appt, assignments: nextAssignments };
+          })
+      );
+
+      try {
+          await moveAssignment(apptId, idx, newTime, newEmployeeId);
+          toast({ title: 'Turno movido', description: `El turno fue actualizado correctamente.` });
+
+          // Sin bloquear la UI, reconciliamos con estado servidor.
+          void getAppointments()
+              .then(setAppointments)
+              .catch(() => {
+                  // En caso de error de refresco mantenemos el estado optimista.
+              });
+      } catch (error) {
+          setAppointments(previousAppointments);
+          toast({ variant: 'destructive', title: 'Error', description: 'No se pudo mover el turno.' });
+      }
   };
 
     const handleOpenDayModal = (day: Date) => {

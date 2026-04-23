@@ -8,13 +8,16 @@ import { redirect } from 'next/navigation';
 import Papa from 'papaparse';
 import { 
     createAppointment as createAppointmentData, 
+    clearDataReadCache,
     getServiceById, 
     getSettings, 
+    updateSettings,
     cancelAppointment as cancelAppointmentData, 
     updateAppointment as updateAppointmentData,
     deleteAppointment as deleteAppointmentData,
     getAppointments,
     getClients,
+    getClientByEmail,
     getProducts,
     getServices,
     getUsers,
@@ -32,14 +35,17 @@ import {
     batchCreateProducts,
     batchCreateServices
 } from './data';
-import { createUser } from './auth-actions';
+import { createUser, getCurrentUser } from './auth-actions';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { revalidatePath } from 'next/cache';
-import type { Appointment, AppointmentAssignment, Client, Product, Service, User } from './types';
-import { AppointmentModel } from './models';
+import type { Appointment, AppointmentAssignment, ArcaInvoice, Client, Product, Service, User } from './types';
+import { AppointmentModel, ClientModel, ProductModel, ServiceModel, SettingsModel, UserModel } from './models';
 import { connectToDatabase } from './mongodb';
 import { format, toDate } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { clearArcaConfigCache, createArcaClient, getArcaRuntimeConfig, isArcaConfigured } from './arca/client';
+import { issueInvoiceWithArca } from './arca/service';
+import { encryptSecret, maskSecret } from './arca/secrets';
 
 const client = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN! });
 
@@ -304,8 +310,331 @@ export async function billAllClientAppointments(appointmentIds: string[]) {
 }
 
 export async function revertAllClientAppointments(appointmentIds: string[]) {
+    await connectToDatabase();
+    const appointments = await AppointmentModel.find({ _id: { $in: appointmentIds } }).lean();
+
+    const hasAuthorizedArcaVoucher = appointments.some(
+        (appointment) => appointment.arcaInvoice?.status === 'authorized'
+    );
+
+    if (hasAuthorizedArcaVoucher) {
+        throw new Error('No se puede revertir un grupo con comprobante ARCA autorizado.');
+    }
+
     await updateClientAppointmentsStatus(appointmentIds, 'completed');
     revalidatePath('/admin/billing');
+}
+
+function sanitizeErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+    return 'Error desconocido al emitir comprobante ARCA.';
+}
+
+function hasBillingRole(role?: string): boolean {
+    return role === 'Superadmin' || role === 'Gerente' || role === 'Recepcion';
+}
+
+function buildArcaDescription(customerName: string, appointments: Appointment[]): string {
+    const servicesCount = appointments.reduce((total, appointment) => total + (appointment.assignments || []).length, 0);
+    return `Servicios de peluqueria - ${customerName} - ${servicesCount} servicio(s)`;
+}
+
+function calculateTotalAmountCents(
+    appointments: Appointment[],
+    services: Service[],
+    products: Product[]
+): number {
+    const servicePriceById = new Map(services.map((service) => [service.id, service.price]));
+    const productPriceById = new Map(products.map((product) => [product.id, product.price]));
+
+    const servicesCents = appointments.reduce((sum, appointment) => {
+        return sum + (appointment.assignments || []).reduce((acc, assignment) => {
+            return acc + (servicePriceById.get(assignment.serviceId) || 0);
+        }, 0);
+    }, 0);
+
+    const productsCents = appointments.reduce((sum, appointment) => {
+        return sum + (appointment.productIds || []).reduce((acc, productId) => {
+            return acc + (productPriceById.get(productId) || 0);
+        }, 0);
+    }, 0);
+
+    return servicesCents + productsCents;
+}
+
+export async function getArcaConfigurationStatus() {
+    const user = await getCurrentUser();
+    if (!user || !hasBillingRole(user.role)) {
+        return { configured: false, allowed: false, environment: null as string | null, message: 'Sin permisos para facturar.' };
+    }
+
+    try {
+        const configured = await isArcaConfigured();
+        const runtime = configured ? await getArcaRuntimeConfig() : null;
+        const environment = runtime?.production ? 'produccion' : 'homologacion';
+        return {
+            configured,
+            allowed: true,
+            environment,
+            message: configured ? '' : 'Configuracion ARCA incompleta.',
+        };
+    } catch (error) {
+        return {
+            configured: false,
+            allowed: true,
+            environment: null as string | null,
+            message: sanitizeErrorMessage(error),
+        };
+    }
+}
+
+export async function getArcaAdminSettings() {
+    const user = await getCurrentUser();
+    if (!user || user.role !== 'Superadmin') {
+        throw new Error('Solo Superadmin puede ver la configuracion ARCA.');
+    }
+
+    await connectToDatabase();
+    const settings = await SettingsModel.findOne({}).lean();
+
+    return {
+        arcaCuit: settings?.arcaCuit ? String(settings.arcaCuit) : '',
+        arcaProduction: Boolean(settings?.arcaProduction),
+        arcaPtoVta: Number(settings?.arcaPtoVta || 1),
+        arcaCbteTipo: Number(settings?.arcaCbteTipo || 11),
+        arcaConcepto: Number(settings?.arcaConcepto || 2),
+        arcaMoneda: settings?.arcaMoneda || 'PES',
+        arcaDocTipoDefault: Number(settings?.arcaDocTipoDefault || 99),
+        arcaDocNroDefault: Number(settings?.arcaDocNroDefault || 0),
+        hasAccessToken: Boolean(settings?.arcaAccessTokenEncrypted),
+        hasCertPem: Boolean(settings?.arcaCertPemEncrypted),
+        hasKeyPem: Boolean(settings?.arcaKeyPemEncrypted),
+        maskedAccessToken: maskSecret(settings?.arcaAccessTokenEncrypted ? 'guardado' : ''),
+    };
+}
+
+type SaveArcaAdminSettingsInput = {
+    arcaCuit: string;
+    arcaProduction: boolean;
+    arcaPtoVta: number;
+    arcaCbteTipo: number;
+    arcaConcepto: number;
+    arcaMoneda: string;
+    arcaDocTipoDefault: number;
+    arcaDocNroDefault: number;
+    accessToken?: string;
+    certPem?: string;
+    keyPem?: string;
+    clearAccessToken?: boolean;
+    clearCertPem?: boolean;
+    clearKeyPem?: boolean;
+};
+
+export async function saveArcaAdminSettings(input: SaveArcaAdminSettingsInput) {
+    const user = await getCurrentUser();
+    if (!user || user.role !== 'Superadmin') {
+        throw new Error('Solo Superadmin puede guardar la configuracion ARCA.');
+    }
+
+    const cuit = Number((input.arcaCuit || '').replace(/\D/g, ''));
+    if (!Number.isFinite(cuit) || String(cuit).length !== 11) {
+        throw new Error('CUIT invalido. Debe tener 11 digitos.');
+    }
+
+    if (![1, 2, 3].includes(Number(input.arcaConcepto))) {
+        throw new Error('Concepto invalido. Valores permitidos: 1, 2 o 3.');
+    }
+
+    const setPayload: Record<string, unknown> = {
+        arcaCuit: cuit,
+        arcaProduction: Boolean(input.arcaProduction),
+        arcaPtoVta: Number(input.arcaPtoVta || 1),
+        arcaCbteTipo: Number(input.arcaCbteTipo || 11),
+        arcaConcepto: Number(input.arcaConcepto || 2),
+        arcaMoneda: (input.arcaMoneda || 'PES').trim().toUpperCase(),
+        arcaDocTipoDefault: Number(input.arcaDocTipoDefault || 99),
+        arcaDocNroDefault: Number(input.arcaDocNroDefault || 0),
+    };
+
+    const accessToken = (input.accessToken || '').trim();
+    const certPem = (input.certPem || '').trim();
+    const keyPem = (input.keyPem || '').trim();
+
+    if (accessToken) {
+        setPayload.arcaAccessTokenEncrypted = encryptSecret(accessToken);
+    }
+    if (certPem) {
+        setPayload.arcaCertPemEncrypted = encryptSecret(certPem);
+    }
+    if (keyPem) {
+        setPayload.arcaKeyPemEncrypted = encryptSecret(keyPem);
+    }
+
+    const unsetPayload: Record<string, ''> = {};
+    if (input.clearAccessToken) unsetPayload.arcaAccessTokenEncrypted = '';
+    if (input.clearCertPem) unsetPayload.arcaCertPemEncrypted = '';
+    if (input.clearKeyPem) unsetPayload.arcaKeyPemEncrypted = '';
+
+    await connectToDatabase();
+    await SettingsModel.findOneAndUpdate(
+        {},
+        {
+            $set: setPayload,
+            ...(Object.keys(unsetPayload).length > 0 ? { $unset: unsetPayload } : {}),
+        },
+        { upsert: true, new: true }
+    ).lean();
+
+    clearArcaConfigCache();
+    revalidatePath('/admin/settings');
+    revalidatePath('/admin/billing');
+
+    return { success: true };
+}
+
+export async function testArcaConnection() {
+    const user = await getCurrentUser();
+    if (!user || user.role !== 'Superadmin') {
+        throw new Error('Solo Superadmin puede probar la conexion ARCA.');
+    }
+
+    try {
+        const runtime = await getArcaRuntimeConfig();
+        const afip = await createArcaClient();
+        const serverStatus = await afip.ElectronicBilling.getServerStatus();
+
+        return {
+            ok: true,
+            environment: runtime.production ? 'produccion' : 'homologacion',
+            salesPoint: runtime.salesPoint,
+            voucherType: runtime.voucherType,
+            serverStatus,
+            message: 'Conexion ARCA exitosa.',
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            message: sanitizeErrorMessage(error),
+        };
+    }
+}
+
+export async function issueArcaInvoiceForGroup(appointmentIds: string[]) {
+    const user = await getCurrentUser();
+    if (!user || !hasBillingRole(user.role)) {
+        throw new Error('No tenes permisos para emitir comprobantes ARCA.');
+    }
+
+    await connectToDatabase();
+
+    const docs = await AppointmentModel.find({ _id: { $in: appointmentIds } }).lean();
+    const appointments = docs.map((doc) => ({
+        ...doc,
+        id: doc._id.toString(),
+        _id: undefined,
+    })) as unknown as Appointment[];
+
+    if (appointments.length === 0) {
+        throw new Error('No se encontraron turnos para facturar.');
+    }
+
+    const hasInvalidStatus = appointments.some(
+        (appointment) => appointment.status !== 'completed' && appointment.status !== 'facturado'
+    );
+    if (hasInvalidStatus) {
+        throw new Error('Solo se pueden facturar turnos completados.');
+    }
+
+    const alreadyAuthorized = appointments.find((appointment) => appointment.arcaInvoice?.status === 'authorized');
+    if (alreadyAuthorized?.arcaInvoice) {
+        return {
+            success: true,
+            alreadyIssued: true,
+            invoice: alreadyAuthorized.arcaInvoice,
+        };
+    }
+
+    const [services, products] = await Promise.all([getServices(), getProducts()]);
+    const totalAmountCents = calculateTotalAmountCents(appointments, services, products);
+
+    if (totalAmountCents <= 0) {
+        throw new Error('No se pudo calcular un importe valido para facturar.');
+    }
+
+    const primaryAppointment = appointments[0];
+    const client = await getClientByEmail(primaryAppointment.customerEmail);
+
+    try {
+        const arcaResponse = await issueInvoiceWithArca({
+            totalAmount: totalAmountCents / 100,
+            serviceDate: primaryAppointment.date,
+            clientCuit: client?.cuit,
+            clientDni: client?.dni,
+            description: buildArcaDescription(primaryAppointment.customerName, appointments),
+        });
+
+        const invoiceRecord: ArcaInvoice = {
+            status: 'authorized',
+            environment: arcaResponse.environment,
+            salesPoint: arcaResponse.salesPoint,
+            voucherType: arcaResponse.voucherType,
+            voucherNumber: arcaResponse.voucherNumber,
+            cae: arcaResponse.cae,
+            caeExpiration: arcaResponse.caeExpirationDate,
+            issuedAt: new Date().toISOString(),
+            currency: arcaResponse.currency,
+            totalAmountCents,
+            docType: arcaResponse.docType,
+            docNumber: String(arcaResponse.docNumber),
+            requestPayload: arcaResponse.requestPayload,
+            responsePayload: arcaResponse.responsePayload,
+        };
+
+        await AppointmentModel.updateMany(
+            { _id: { $in: appointmentIds } },
+            {
+                $set: {
+                    status: 'facturado',
+                    arcaInvoice: invoiceRecord,
+                },
+            }
+        );
+
+        revalidatePath('/admin/billing');
+
+        return {
+            success: true,
+            alreadyIssued: false,
+            invoice: invoiceRecord,
+        };
+    } catch (error) {
+        const errorMessage = sanitizeErrorMessage(error);
+
+        await AppointmentModel.updateMany(
+            { _id: { $in: appointmentIds } },
+            {
+                $set: {
+                    arcaInvoice: {
+                        status: 'error',
+                        environment: process.env.ARCA_PRODUCTION === 'true' ? 'produccion' : 'homologacion',
+                        salesPoint: Number(process.env.ARCA_PTO_VTA || 1),
+                        voucherType: Number(process.env.ARCA_CBTE_TIPO || 11),
+                        currency: process.env.ARCA_MONEDA || 'PES',
+                        totalAmountCents,
+                        docType: Number(process.env.ARCA_DOC_TIPO_DEFAULT || 99),
+                        docNumber: String(process.env.ARCA_DOC_NRO_DEFAULT || 0),
+                        errorMessage,
+                        issuedAt: new Date().toISOString(),
+                    },
+                },
+            }
+        );
+
+        revalidatePath('/admin/billing');
+        throw new Error(errorMessage);
+    }
 }
 
 export async function moveAssignment(
@@ -322,6 +651,7 @@ export async function moveAssignment(
     appt.assignments[assignmentIdx].time = newTime;
     appt.assignments[assignmentIdx].employeeId = newEmployeeId;
     await appt.save();
+    await clearDataReadCache();
     revalidatePath('/admin/agenda');
     revalidatePath('/admin/my-day');
     revalidatePath('/admin');
@@ -329,25 +659,116 @@ export async function moveAssignment(
 
 
 export async function createBackup() {
-    const [
-        appointments,
-        clients,
-        products,
-        services,
-        users
-    ] = await Promise.all([
-        getAppointments(),
-        getClients(),
-        getProducts(),
-        getServices(),
-        getUsers()
+    const user = await getCurrentUser();
+    if (!user || (user.role !== 'Superadmin' && user.role !== 'Gerente')) {
+        throw new Error('No tenes permisos para generar backup completo.');
+    }
+
+    await connectToDatabase();
+
+    const [appointmentsRaw, clientsRaw, productsRaw, servicesRaw, usersRaw, settingsRaw] = await Promise.all([
+        AppointmentModel.find({}).lean(),
+        ClientModel.find({}).lean(),
+        ProductModel.find({}).lean(),
+        ServiceModel.find({}).lean(),
+        UserModel.find({}).lean(),
+        SettingsModel.find({}).lean(),
     ]);
+
+    const stripMongoId = (doc: any) => {
+        const { _id, ...rest } = doc;
+        return rest;
+    };
+
     return {
-        appointments,
-        clients,
-        products,
-        services,
-        users
+        meta: {
+            app: 'alessi',
+            format: 'alessi-backup-v2',
+            generatedAt: new Date().toISOString(),
+        },
+        data: {
+            appointments: appointmentsRaw.map(stripMongoId),
+            clients: clientsRaw.map(stripMongoId),
+            products: productsRaw.map(stripMongoId),
+            services: servicesRaw.map(stripMongoId),
+            users: usersRaw.map(stripMongoId),
+            settings: settingsRaw.map(stripMongoId),
+        },
+    };
+}
+
+export async function restoreBackup(formData: FormData): Promise<{ success: boolean; message: string }> {
+    const user = await getCurrentUser();
+    if (!user || (user.role !== 'Superadmin' && user.role !== 'Gerente')) {
+        return { success: false, message: 'No tenes permisos para restaurar backup.' };
+    }
+
+    const file = formData.get('file') as File;
+    if (!file) {
+        return { success: false, message: 'No se selecciono archivo de backup.' };
+    }
+
+    let parsed: any;
+    try {
+        parsed = JSON.parse(await file.text());
+    } catch {
+        return { success: false, message: 'El archivo no es un JSON valido.' };
+    }
+
+    const payload = parsed?.data ? parsed.data : parsed;
+    const appointments = Array.isArray(payload?.appointments) ? payload.appointments : null;
+    const clients = Array.isArray(payload?.clients) ? payload.clients : null;
+    const products = Array.isArray(payload?.products) ? payload.products : null;
+    const services = Array.isArray(payload?.services) ? payload.services : null;
+    const users = Array.isArray(payload?.users) ? payload.users : null;
+    const settings = Array.isArray(payload?.settings) ? payload.settings : null;
+
+    if (!appointments || !clients || !products || !services || !users || !settings) {
+        return {
+            success: false,
+            message: 'Backup incompleto. Debe incluir appointments, clients, products, services, users y settings.',
+        };
+    }
+
+    await connectToDatabase();
+
+    try {
+        await Promise.all([
+            AppointmentModel.deleteMany({}),
+            ClientModel.deleteMany({}),
+            ProductModel.deleteMany({}),
+            ServiceModel.deleteMany({}),
+            UserModel.deleteMany({}),
+            SettingsModel.deleteMany({}),
+        ]);
+
+        if (services.length) await ServiceModel.insertMany(services);
+        if (products.length) await ProductModel.insertMany(products);
+        if (clients.length) await ClientModel.insertMany(clients);
+        if (users.length) await UserModel.insertMany(users);
+        if (appointments.length) await AppointmentModel.insertMany(appointments);
+        if (settings.length) await SettingsModel.insertMany(settings);
+
+        revalidatePath('/admin');
+        revalidatePath('/admin/agenda');
+        revalidatePath('/admin/clients');
+        revalidatePath('/admin/services');
+        revalidatePath('/admin/products');
+        revalidatePath('/admin/users');
+        revalidatePath('/admin/settings');
+        revalidatePath('/admin/billing');
+        revalidatePath('/admin/backup');
+
+        return {
+            success: true,
+            message: `Restauracion completa finalizada. ${appointments.length} turnos, ${clients.length} clientes, ${products.length} productos, ${services.length} servicios, ${users.length} usuarios y ${settings.length} settings.`,
+        };
+    } catch (error: any) {
+        console.error('restoreBackup failed:', error);
+        return {
+            success: false,
+            message: error?.message || 'No se pudo restaurar el backup completo.',
+        };
     }
 }
 
