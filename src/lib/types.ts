@@ -26,6 +26,7 @@ export interface AppointmentAssignment {
     status?: 'pending' | 'in_progress' | 'completed';
 }
 
+
 export interface Appointment {
     id: string;
     assignments: AppointmentAssignment[];

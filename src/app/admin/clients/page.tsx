@@ -25,7 +25,8 @@ import { getAppointmentsByClient } from '@/lib/data';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useState, useEffect, useMemo, useTransition, useRef } from 'react';
-import { ClientModal } from '@/components/client-modal';
+import dynamic from 'next/dynamic';
+const ClientModal = dynamic(() => import('@/components/client-modal').then(m => m.ClientModal), { ssr: false, loading: () => null });
 import type { Appointment, Client } from '@/lib/types';
 import { WhatsAppReminderButton } from '@/components/whatsapp-reminder-button';
 import { useCurrentUser } from '../user-context';
@@ -61,7 +62,6 @@ export default function ClientsPage() {
     const canViewClients = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
 
     const fetchClientsAndAppointments = async () => {
-        console.log('🔄 Recargando lista de clientes...');
         const [baseClients, allAppointments] = await Promise.all([
             getClients(),
             getAppointments()
@@ -91,7 +91,6 @@ export default function ClientsPage() {
         });
 
         setClients(clientsWithAppointments);
-        console.log('✅ Lista de clientes actualizada:', clientsWithAppointments.length);
     };
 
 
@@ -173,13 +172,11 @@ export default function ClientsPage() {
 
     const handleOpenModal = (client: Partial<Client> | null) => {
         if (!canManage) return;
-        console.log('📝 Abriendo modal para:', client ? 'editar' : 'crear');
         setSelectedClient(client);
         setIsModalOpen(true);
     }
     
     const handleCloseModal = () => {
-        console.log('🔒 Cerrando modal');
         setSelectedClient(null);
         setIsModalOpen(false);
         startTransition(async () => {
@@ -189,7 +186,6 @@ export default function ClientsPage() {
 
     const handleDelete = async (id: string, name: string) => {
         if (!canManage) {
-            console.warn('⚠️  Usuario sin permisos para eliminar');
             toast({
                 variant: 'destructive',
                 title: 'Sin permisos',
@@ -197,53 +193,35 @@ export default function ClientsPage() {
             });
             return;
         }
-        
-        console.log('🗑️  Intentando eliminar cliente:', id, name);
-        
+
         const confirmed = window.confirm(
             `¿Estás seguro de que quieres eliminar a "${name}"?\n\nEsta acción no se puede deshacer.`
         );
-        
-        if (!confirmed) {
-            console.log('❌ Usuario canceló la eliminación');
-            return;
-        }
 
-        console.log('✅ Usuario confirmó eliminación');
-        
+        if (!confirmed) return;
+
         startTransition(async () => {
             try {
-                console.log('📤 Llamando a deleteClientAction con id:', id);
-                
                 const result = await deleteClientAction(id);
-                
-                console.log('📥 Respuesta recibida:', result);
-                
+
                 if (result.success) {
-                    console.log('✅ Cliente eliminado exitosamente en BD');
-                    
-                    toast({ 
-                        title: '✅ Cliente eliminado', 
-                        description: `${name} ha sido eliminado correctamente` 
+                    toast({
+                        title: 'Cliente eliminado',
+                        description: `${name} ha sido eliminado correctamente`
                     });
-                    
-                    console.log('🔄 Recargando lista de clientes...');
                     await fetchClientsAndAppointments();
-                    console.log('✅ Lista de clientes recargada');
                 } else {
-                    console.error('❌ Error del servidor:', result.message);
-                    toast({ 
-                        variant: 'destructive', 
-                        title: '❌ Error', 
-                        description: result.message 
+                    toast({
+                        variant: 'destructive',
+                        title: 'Error',
+                        description: result.message
                     });
                 }
             } catch (error: any) {
-                console.error('❌ Error capturado en handleDelete:', error);
-                toast({ 
-                    variant: 'destructive', 
-                    title: '❌ Error inesperado', 
-                    description: 'No se pudo eliminar el cliente. Intenta de nuevo.' 
+                toast({
+                    variant: 'destructive',
+                    title: 'Error inesperado',
+                    description: 'No se pudo eliminar el cliente. Intenta de nuevo.'
                 });
             }
         });
@@ -285,7 +263,6 @@ export default function ClientsPage() {
                 });
             }
         } catch (error: any) {
-            console.error('Error importando:', error);
             toast({
                 variant: 'destructive',
                 title: '❌ Error inesperado',

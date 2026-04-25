@@ -16,7 +16,7 @@ export default function SettingsPage() {
     const { toast } = useToast();
 
     useEffect(() => {
-        getSettings().then(settings => {
+        getSettings().then((settings) => {
             setSpamProtection(settings.spamProtection);
             setIsLoading(false);
         });
@@ -32,7 +32,7 @@ export default function SettingsPage() {
             });
         });
     };
-    
+
     if (isLoading) {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></div>
     }

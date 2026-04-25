@@ -22,10 +22,11 @@ import { revertAllClientAppointments, billAllClientAppointments } from "@/lib/ac
 import { format, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Undo2, DollarSign, Loader2 } from "lucide-react";
-import { useTransition, useState, useEffect, useMemo } from "react";
+import { useTransition, useState, useEffect } from "react";
 import type { Appointment } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
-import { BillingDetailModal } from "@/components/billing-detail-modal";
+import dynamic from 'next/dynamic';
+const BillingDetailModal = dynamic(() => import('@/components/billing-detail-modal').then(m => m.BillingDetailModal), { ssr: false, loading: () => null });
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const ITEMS_PER_PAGE = 10;
@@ -47,9 +48,17 @@ function RevertButton({ appointmentIds, onRevert }: { appointmentIds: string[], 
     const handleClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         startTransition(async () => {
-            await revertAllClientAppointments(appointmentIds);
-            toast({ title: "Turno/s revertido/s", description: "El grupo de turnos ha vuelto a la lista de 'Por Cobrar'." });
-            onRevert();
+            try {
+                await revertAllClientAppointments(appointmentIds);
+                toast({ title: "Turno/s revertido/s", description: "El grupo de turnos ha vuelto a la lista de 'Por Cobrar'." });
+                onRevert();
+            } catch (error) {
+                toast({
+                    variant: 'destructive',
+                    title: 'No se pudo revertir',
+                    description: error instanceof Error ? error.message : 'Ocurrio un error al revertir el grupo.',
+                });
+            }
         });
     }
 
@@ -68,27 +77,35 @@ function BillButton({ appointmentIds, onBill }: { appointmentIds: string[], onBi
     const handleClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         startTransition(async () => {
-            await billAllClientAppointments(appointmentIds);
-            toast({ title: "Turno/s Facturado/s", description: "El grupo de turnos se ha movido a la lista de 'Cobrados'." });
-            onBill();
+            try {
+                await billAllClientAppointments(appointmentIds);
+                toast({ title: "Turno/s facturado/s", description: "El grupo de turnos fue marcado como cobrado." });
+                onBill();
+            } catch (error) {
+                toast({
+                    variant: 'destructive',
+                    title: 'No se pudo facturar',
+                    description: error instanceof Error ? error.message : 'Ocurrio un error al facturar el grupo.',
+                });
+            }
         });
     }
 
     return (
         <Button size="sm" onClick={handleClick} disabled={isPending}>
             <DollarSign className="mr-2 h-4 w-4" />
-            {isPending ? "Facturando..." : "Facturar"}
+            {isPending ? "Facturando..." : "Cobrar"}
         </Button>
     )
 }
 
-function AppointmentsTable({ 
-    groups, 
-    onRowClick, 
+function AppointmentsTable({
+    groups,
+    onRowClick,
     actionButton,
-    emptyMessage 
-}: { 
-    groups: BillingGroup[], 
+    emptyMessage
+}: {
+    groups: BillingGroup[],
     onRowClick: (group: BillingGroup) => void,
     actionButton: (group: BillingGroup) => React.ReactNode,
     emptyMessage: string,
@@ -132,13 +149,13 @@ function AppointmentsTable({
     );
 }
 
-function PaginatedAppointmentList({ 
-    groups, 
+function PaginatedAppointmentList({
+    groups,
     onRowClick,
     actionButtons,
     emptyMessage,
     isLoading
- }: { 
+ }: {
     groups: BillingGroup[],
     onRowClick: (group: BillingGroup) => void,
     actionButtons: { [key: string]: (group: BillingGroup) => React.ReactNode },
@@ -146,7 +163,7 @@ function PaginatedAppointmentList({
     isLoading: boolean,
 }) {
     const [currentPage, setCurrentPage] = useState(1);
-    
+
     const totalPages = Math.ceil(groups.length / ITEMS_PER_PAGE);
     const paginatedGroups = groups.slice(
         (currentPage - 1) * ITEMS_PER_PAGE,
@@ -172,7 +189,7 @@ function PaginatedAppointmentList({
     return (
         <Card>
             <CardContent className="p-0">
-                <AppointmentsTable 
+                <AppointmentsTable
                     groups={paginatedGroups}
                     onRowClick={onRowClick}
                     actionButton={(group) => (
@@ -221,7 +238,7 @@ export default function BillingPage() {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedGroup, setSelectedGroup] = useState<BillingGroup | null>(null);
-    
+
     const groupAppointments = (appointments: Appointment[]): BillingGroup[] => {
         const grouped = appointments.reduce((acc, appt) => {
             const apptDate = startOfDay(new Date(appt.date));
@@ -252,7 +269,7 @@ export default function BillingPage() {
             getAppointments('completed'),
             getAppointments('facturado')
         ]);
-        
+
         setCompletedGroups(groupAppointments(completedData));
         setBilledGroups(groupAppointments(billedData));
         setLoading(false);
@@ -266,13 +283,14 @@ export default function BillingPage() {
         setSelectedGroup(group);
         setIsModalOpen(true);
     }
-    
+
     return (
         <>
             <BillingDetailModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 billingGroup={selectedGroup}
+                onBill={fetchAppointments}
             />
             <Card>
                  <CardHeader>
@@ -290,7 +308,12 @@ export default function BillingPage() {
                                 groups={completedGroups}
                                 onRowClick={handleRowClick}
                                 actionButtons={{
-                                    bill: (group) => <BillButton appointmentIds={group.appointmentIds} onBill={fetchAppointments} />
+                                    bill: (group) => (
+                                        <BillButton
+                                            appointmentIds={group.appointmentIds}
+                                            onBill={fetchAppointments}
+                                        />
+                                    )
                                 }}
                                 emptyMessage="No hay turnos pendientes de cobro."
                                 isLoading={loading}

@@ -854,10 +854,10 @@ export default function MyDayPage() {
                           <label className="text-[11px] font-semibold text-muted-foreground">Duración (min)</label>
                           <input
                             type="number"
+                            min={1}
                             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                             value={editableAssignment.duration ?? 0}
                             onChange={(e) => updateDraftAssignment(idx, 'duration', Number(e.target.value))}
-                            disabled
                           />
                         </div>
                         <div className="space-y-2 md:col-span-2">

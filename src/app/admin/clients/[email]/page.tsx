@@ -38,7 +38,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useCurrentUser } from '../../user-context';
-import { ClientModal } from '@/components/client-modal';
+import dynamic from 'next/dynamic';
+const ClientModal = dynamic(() => import('@/components/client-modal').then(m => m.ClientModal), { ssr: false, loading: () => null });
 
 
 function getBadgeVariant(status: Appointment['status']) {

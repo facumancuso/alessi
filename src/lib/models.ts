@@ -72,6 +72,7 @@ const appointmentAssignmentSchema = new Schema<AppointmentAssignment>({
   status: { type: String, default: 'pending' },
 }, { _id: false });
 
+
 const appointmentSchema = new Schema<Appointment>({
   assignments: [appointmentAssignmentSchema],
   serviceNames: [{ type: String }],

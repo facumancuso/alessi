@@ -4,7 +4,7 @@ import { connectToDatabase } from './mongodb';
 import { ServiceModel, ProductModel, ClientModel, UserModel, AppointmentModel, SettingsModel } from './models';
 import type { Service, Appointment, Product, Client, User } from './types';
 
-const READ_CACHE_TTL_MS = 10_000;
+const READ_CACHE_TTL_MS = 60_000;
 const readCache = new Map<string, { value: unknown; expiresAt: number }>();
 const inFlightReads = new Map<string, Promise<unknown>>();
 
@@ -286,7 +286,7 @@ export async function updateAppointment(id: string, data: Partial<Appointment>):
   
   const updateData = { ...data };
 
-  const updated = await AppointmentModel.findByIdAndUpdate(id, updateData, { new: true, upsert: true }).lean();
+  const updated = await AppointmentModel.findByIdAndUpdate(id, { $set: updateData }, { new: true }).lean();
   clearDataReadCache();
   if (!updated) return undefined;
 

@@ -11,9 +11,6 @@ import type { Appointment, User, Service } from '@/lib/types';
 import { format, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Crown, DollarSign, Calendar as CalendarIcon, TrendingUp, User as UserIcon, Filter } from 'lucide-react';
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { Bar, BarChart, XAxis, YAxis } from 'recharts';
-import type { ChartConfig } from '@/components/ui/chart';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -27,13 +24,6 @@ type EmployeeStats = {
   totalServices: number;
   allAppointments: Appointment[];
 };
-
-const chartConfig = {
-  value: {
-    label: 'Trabajos',
-    color: 'hsl(var(--primary))',
-  },
-} satisfies ChartConfig;
 
 
 export default function EmployeesPage() {

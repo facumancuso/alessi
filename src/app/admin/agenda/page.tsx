@@ -16,8 +16,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import type { Appointment, AppointmentAssignment, Client, User } from '@/lib/types';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { DayAppointmentsModal } from '@/components/day-appointments-modal';
-import { ClientHistoryModal } from '@/components/client-history-modal';
+import dynamic from 'next/dynamic';
+const DayAppointmentsModal = dynamic(() => import('@/components/day-appointments-modal').then(m => m.DayAppointmentsModal), { ssr: false, loading: () => null });
+const ClientHistoryModal = dynamic(() => import('@/components/client-history-modal').then(m => m.ClientHistoryModal), { ssr: false, loading: () => null });
 import { useCurrentUser } from '../user-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -172,7 +173,7 @@ function DayView({
         isReception: boolean;
     onOpenMyDay: (appointmentId: string) => void;
 }) {
-    const timeIndicatorRef = useRef<HTMLDivElement>(null);
+
         const timelineContainerRef = useRef<HTMLDivElement>(null);
         const previewPanelRef = useRef<HTMLDivElement>(null);
     const [dragState, setDragState] = useState<DragState | null>(null);
@@ -211,11 +212,6 @@ function DayView({
     const minEmployeeColumnWidth = employeeFilter !== 'todos' ? 150 : 120;
     const employeeGridTemplate = `repeat(${Math.max(visibleEmployees.length, 1)}, minmax(${minEmployeeColumnWidth}px, 1fr))`;
     
-    useEffect(() => {
-        if (timeIndicatorRef.current && isSameDay(day, now)) {
-            timeIndicatorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    }, [nowIndicatorTop, day, now]);
 
     useEffect(() => {
         if (!previewPanel) return;
@@ -389,7 +385,6 @@ function DayView({
                     <div className="grid flex-1" style={{ gridTemplateColumns: employeeGridTemplate }}>
                         {nowIndicatorTop > 0 && (
                             <div
-                                ref={timeIndicatorRef}
                                 className="agenda-now-indicator absolute right-0 h-0.5 bg-red-500 z-40"
                                 style={{ top: nowIndicatorTop, left: 0 }}
                             >
@@ -1081,13 +1076,15 @@ export default function AgendaPage() {
       <input type="file" ref={importInputRef} className="hidden" onChange={handleFileImport} accept=".csv" />
       <div className="salon-shell space-y-4 md:space-y-5">
         <Tabs defaultValue="dia">
-          <div className="flex justify-center mb-4">
-              <TabsList className={cn('agenda-tabs-list grid w-full max-w-md', isReception ? 'grid-cols-1' : 'grid-cols-3')}>
-                  <TabsTrigger className="agenda-tabs-trigger" value="dia">Día</TabsTrigger>
-                  {!isReception && <TabsTrigger className="agenda-tabs-trigger" value="semana">Semana</TabsTrigger>}
-                  {!isReception && <TabsTrigger className="agenda-tabs-trigger" value="mes">Mes</TabsTrigger>}
+          {!isReception && (
+            <div className="flex justify-center mb-4">
+              <TabsList className="agenda-tabs-list grid w-full max-w-md grid-cols-3">
+                <TabsTrigger className="agenda-tabs-trigger" value="dia">Día</TabsTrigger>
+                <TabsTrigger className="agenda-tabs-trigger" value="semana">Semana</TabsTrigger>
+                <TabsTrigger className="agenda-tabs-trigger" value="mes">Mes</TabsTrigger>
               </TabsList>
-          </div>
+            </div>
+          )}
           <TabsContent value="dia">
               <Card className="agenda-panel agenda-panel--timeline">
                   <CardHeader className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">

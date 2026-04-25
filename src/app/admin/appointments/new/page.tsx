@@ -28,7 +28,8 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ClientSearchModal } from '@/components/client-search-modal';
+import dynamic from 'next/dynamic';
+const ClientSearchModal = dynamic(() => import('@/components/client-search-modal').then(m => m.ClientSearchModal), { ssr: false, loading: () => null });
 import { sortEmployeesByAgendaOrder } from '@/lib/employee-order';
 
 

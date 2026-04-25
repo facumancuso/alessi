@@ -10,7 +10,8 @@ import { getUsers } from '@/lib/data';
 import type { User } from '@/lib/types';
 import { deleteUser, updateUser } from '@/lib/auth-actions';
 import { PlusCircle, Pencil, Trash2 } from 'lucide-react';
-import { UserModal } from '@/components/user-modal';
+import dynamic from 'next/dynamic';
+const UserModal = dynamic(() => import('@/components/user-modal').then(m => m.UserModal), { ssr: false, loading: () => null });
 import { useToast } from '@/hooks/use-toast';
 import { useCurrentUser } from '../user-context';
 

@@ -1,9 +1,9 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  compress: true,
+  poweredByHeader: false,
   experimental: {
-    // This allows the server to be accessible from other devices on the same network
     serverComponentsExternalPackages: ['@react-pdf/renderer'],
   },
   webpack: (config, { isServer }) => {
