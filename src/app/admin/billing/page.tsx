@@ -110,42 +110,78 @@ function AppointmentsTable({
     actionButton: (group: BillingGroup) => React.ReactNode,
     emptyMessage: string,
 }) {
+    if (groups.length === 0) {
+        return (
+            <div className="flex items-center justify-center h-24 text-sm text-muted-foreground">
+                {emptyMessage}
+            </div>
+        );
+    }
+
     return (
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Servicios</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {groups.length > 0 ? groups.map((group) => (
-                    <TableRow key={group.id} onClick={() => onRowClick(group)} className="cursor-pointer">
-                        <TableCell>
-                            <div className="font-medium">{group.customerName}</div>
-                            <div className="text-sm text-muted-foreground">
-                                {group.customerEmail}
+        <>
+            {/* Vista mobile: cards */}
+            <div className="flex flex-col divide-y sm:hidden">
+                {groups.map((group) => (
+                    <div
+                        key={group.id}
+                        onClick={() => onRowClick(group)}
+                        className="cursor-pointer p-4 hover:bg-muted/40 transition-colors"
+                    >
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="font-medium truncate">{group.customerName}</p>
+                                <p className="text-sm text-muted-foreground truncate">{group.customerEmail}</p>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                                    <span className="text-xs text-muted-foreground">
+                                        {format(group.date, "PPP", { locale: es })}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                        {group.totalServices} servicio(s)
+                                    </span>
+                                </div>
                             </div>
-                        </TableCell>
-                        <TableCell>{group.totalServices} servicio(s)</TableCell>
-                        <TableCell>
-                            {format(group.date, "PPP", { locale: es })}
-                        </TableCell>
-                        <TableCell className="text-right space-x-2">
-                           {actionButton(group)}
-                        </TableCell>
-                    </TableRow>
-                )) : (
-                     <TableRow>
-                        <TableCell colSpan={4} className="h-24 text-center">
-                            {emptyMessage}
-                        </TableCell>
-                    </TableRow>
-                )}
-            </TableBody>
-        </Table>
+                            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                                {actionButton(group)}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Vista desktop: tabla */}
+            <div className="hidden sm:block">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Cliente</TableHead>
+                            <TableHead>Servicios</TableHead>
+                            <TableHead>Fecha</TableHead>
+                            <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {groups.map((group) => (
+                            <TableRow key={group.id} onClick={() => onRowClick(group)} className="cursor-pointer">
+                                <TableCell>
+                                    <div className="font-medium">{group.customerName}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                        {group.customerEmail}
+                                    </div>
+                                </TableCell>
+                                <TableCell>{group.totalServices} servicio(s)</TableCell>
+                                <TableCell>
+                                    {format(group.date, "PPP", { locale: es })}
+                                </TableCell>
+                                <TableCell className="text-right space-x-2">
+                                    {actionButton(group)}
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </div>
+        </>
     );
 }
 
@@ -202,9 +238,9 @@ function PaginatedAppointmentList({
                 />
             </CardContent>
             {totalPages > 1 && (
-                <CardFooter className="flex justify-between items-center pt-4">
+                <CardFooter className="flex justify-between items-center pt-4 px-4 sm:px-6">
                     <span className="text-sm text-muted-foreground">
-                        Página {currentPage} de {totalPages}
+                        Pág. {currentPage} / {totalPages}
                     </span>
                     <div className="flex gap-2">
                         <Button
@@ -293,11 +329,11 @@ export default function BillingPage() {
                 onBill={fetchAppointments}
             />
             <Card>
-                 <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                     <CardTitle>Facturación</CardTitle>
                     <CardDescription>Gestiona los turnos completados pendientes de facturación y revisa los ya facturados.</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="px-4 sm:px-6">
                     <Tabs defaultValue="por-cobrar">
                         <TabsList className="grid w-full grid-cols-2">
                             <TabsTrigger value="por-cobrar">Turnos por Cobrar</TabsTrigger>
