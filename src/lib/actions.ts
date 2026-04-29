@@ -298,11 +298,6 @@ export async function updateAssignmentStatus(
         await appointment.save();
         await clearDataReadCache();
 
-        revalidatePath('/admin/my-day');
-        revalidatePath('/admin/agenda');
-        revalidatePath('/admin');
-        revalidatePath('/admin/billing');
-
         return {};
     } catch (err) {
         console.error('[updateAssignmentStatus]', err);

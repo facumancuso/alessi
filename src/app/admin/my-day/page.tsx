@@ -130,6 +130,7 @@ export default function MyDayPage() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const previousStatusesRef = useRef<Map<string, Appointment['status']>>(new Map());
   const [isPending, startTransition] = useTransition();
+  const [isStatusSaving, setIsStatusSaving] = useState(false);
   const [notes, setNotes] = useState('');
   const [allServices, setAllServices] = useState<Service[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
@@ -363,7 +364,7 @@ export default function MyDayPage() {
   }, [selectedAppt?.id]);
 
   const handleStatus = (status: 'pending' | 'in_progress' | 'completed', assignmentIdx: number) => {
-    if (!selectedAppt || !currentUser) return;
+    if (!selectedAppt || !currentUser || isStatusSaving) return;
 
     // Optimistic update: reflect the change instantly in the UI
     const applyOptimistic = (list: Appointment[]) =>
@@ -380,29 +381,39 @@ export default function MyDayPage() {
     setDailyAppointments(prev => applyOptimistic(prev));
     setAllAppointments(prev => applyOptimistic(prev));
 
-    startTransition(async () => {
-      const result = await updateAssignmentStatus(selectedAppt.id, currentUser.id, status, assignmentIdx);
-
-      if (result.error) {
-        // Revert optimistic update fetching fresh data from server
-        const all = await getAppointments().catch(() => null);
-        if (all) {
-          setAllAppointments(all);
-          setDailyAppointments(
-            all.filter(a =>
-              (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
-              isToday(new Date(a.date)) &&
-              a.status !== 'cancelled'
-            )
-          );
+    // Fire-and-forget: no bloqueamos la UI mientras guarda en el servidor
+    setIsStatusSaving(true);
+    const appointmentId = selectedAppt.id;
+    const userId = currentUser.id;
+    updateAssignmentStatus(appointmentId, userId, status, assignmentIdx)
+      .then(result => {
+        if (result.error) {
+          // Revert optimistic update fetching fresh data from server
+          return getAppointments().then(all => {
+            setAllAppointments(all);
+            setDailyAppointments(
+              all.filter(a =>
+                (a.assignments ?? []).some(x => x.employeeId === userId) &&
+                isToday(new Date(a.date)) &&
+                a.status !== 'cancelled'
+              )
+            );
+            toast({
+              title: 'Error al actualizar turno',
+              description: result.error,
+              variant: 'destructive',
+            });
+          }).catch(() => undefined);
         }
+      })
+      .catch(() => {
         toast({
           title: 'Error al actualizar turno',
-          description: result.error,
+          description: 'No se pudo guardar el cambio. Intentá de nuevo.',
           variant: 'destructive',
         });
-      }
-    });
+      })
+      .finally(() => setIsStatusSaving(false));
   };
 
   const handleSaveNotes = () => {
@@ -730,12 +741,10 @@ export default function MyDayPage() {
                   <Button
                     size="sm"
                     className="h-8 gap-1.5 text-[11px]"
-                    disabled={isPending}
+                    disabled={isStatusSaving}
                     onClick={() => handleStatus('in_progress', firstPendingAssignment.idx)}
                   >
-                    {isPending
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <PlayCircle className="h-3.5 w-3.5" />}
+                    <PlayCircle className="h-3.5 w-3.5" />
                     Iniciar turno
                   </Button>
                 )}
@@ -744,12 +753,10 @@ export default function MyDayPage() {
                     size="sm"
                     variant="outline"
                     className="h-8 gap-1.5 text-[11px] border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
-                    disabled={isPending}
+                    disabled={isStatusSaving}
                     onClick={() => handleStatus('completed', firstInProgressAssignment.idx)}
                   >
-                    {isPending
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    <CheckCircle2 className="h-3.5 w-3.5" />
                     Finalizar turno
                   </Button>
                 )}
@@ -967,12 +974,10 @@ export default function MyDayPage() {
                       <Button
                         size="sm"
                         className="h-8 w-full gap-2 text-xs"
-                        disabled={isPending}
+                        disabled={isStatusSaving}
                         onClick={() => handleStatus('in_progress', idx)}
                       >
-                        {isPending
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <PlayCircle className="h-3.5 w-3.5" />}
+                        <PlayCircle className="h-3.5 w-3.5" />
                         Iniciar atención
                       </Button>
                     )}
@@ -981,12 +986,10 @@ export default function MyDayPage() {
                         size="sm"
                         variant="outline"
                         className="h-8 w-full gap-2 text-xs border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
-                        disabled={isPending}
+                        disabled={isStatusSaving}
                         onClick={() => handleStatus('completed', idx)}
                       >
-                        {isPending
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        <CheckCircle2 className="h-3.5 w-3.5" />
                         Finalizar servicio
                       </Button>
                     )}
