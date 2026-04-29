@@ -384,7 +384,7 @@ export default function MyDayPage() {
       const result = await updateAssignmentStatus(selectedAppt.id, currentUser.id, status, assignmentIdx);
 
       if (result.error) {
-        // Revert optimistic update
+        // Revert optimistic update fetching fresh data from server
         const all = await getAppointments().catch(() => null);
         if (all) {
           setAllAppointments(all);
@@ -401,28 +401,7 @@ export default function MyDayPage() {
           description: result.error,
           variant: 'destructive',
         });
-        return;
       }
-
-      // Sync with server to confirm final state
-      const all = await getAppointments();
-      setAllAppointments(all);
-      const today = all
-        .filter(a =>
-          (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
-          isToday(new Date(a.date)) &&
-          a.status !== 'cancelled'
-        )
-        .sort((a, b) => {
-          const t = (appt: Appointment) => {
-            const m = (appt.assignments ?? []).find(x => x.employeeId === currentUser.id);
-            return m?.time
-              ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${m.time}:00`).getTime()
-              : new Date(appt.date).getTime();
-          };
-          return t(a) - t(b);
-        });
-      setDailyAppointments(today);
     });
   };
 

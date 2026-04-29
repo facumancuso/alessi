@@ -108,3 +108,36 @@ Para que otros dispositivos en tu misma red (WiFi o cableada) puedan acceder a t
     2.  Comparte la dirección `http://<tu-ip-local>:9002` (ej. `http://192.168.1.105:9002`).
 - **Para Compartir por Internet:** Usa el link que te proporciona la ventana de **Tunnelmole**.
 - **Para Detener:** Cierra las terminales con `Ctrl + C`, especialmente la de los emuladores, para asegurar que los datos se guarden.
+
+---
+
+## 7. Configuración de Facturación ARCA (AFIP)
+
+Para emitir comprobantes reales desde la pantalla de Facturación, agrega estas variables en tu entorno (`.env.local` o equivalente):
+
+```bash
+ARCA_CUIT=20123456789
+ARCA_PRODUCTION=false
+
+# Opcion 1: token de Afip SDK
+ARCA_ACCESS_TOKEN=tu_token
+
+# Opcion 2: certificado y clave (PEM o BASE64)
+# ARCA_CERT_PEM="-----BEGIN CERTIFICATE-----..."
+# ARCA_KEY_PEM="-----BEGIN PRIVATE KEY-----..."
+# ARCA_CERT_BASE64=...
+# ARCA_KEY_BASE64=...
+
+ARCA_PTO_VTA=1
+ARCA_CBTE_TIPO=11
+ARCA_CONCEPTO=2
+ARCA_MONEDA=PES
+ARCA_DOC_TIPO_DEFAULT=99
+ARCA_DOC_NRO_DEFAULT=0
+```
+
+Notas:
+
+- `ARCA_PRODUCTION=false` usa homologacion. Para produccion, usar `true`.
+- Si falta configuracion, el boton "Facturar ARCA" queda deshabilitado y se muestra mensaje de error.
+- El sistema guarda CAE, numero de comprobante y payload de request/response en cada turno facturado para trazabilidad.

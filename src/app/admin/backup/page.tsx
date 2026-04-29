@@ -1,15 +1,18 @@
 
 'use client';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { createBackup } from "@/lib/actions";
+import { createBackup, restoreBackup } from "@/lib/actions";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Loader2, AlertTriangle } from 'lucide-react';
+import { Download, Loader2, AlertTriangle, Upload, FileJson } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
 
 export default function BackupPage() {
     const [isPending, startTransition] = useTransition();
+    const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const { toast } = useToast();
 
     const handleCreateBackup = () => {
@@ -30,7 +33,7 @@ export default function BackupPage() {
 
                 toast({
                     title: "Backup Generado",
-                    description: "El archivo de respaldo se ha descargado correctamente.",
+                    description: "El archivo de backup completo se ha descargado correctamente.",
                 });
 
             } catch (error) {
@@ -44,13 +47,47 @@ export default function BackupPage() {
         });
     };
 
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        setSelectedFileName(file?.name || null);
+    };
+
+    const handleRestoreBackup = () => {
+        if (!fileInputRef.current?.files?.length) {
+            toast({
+                variant: 'destructive',
+                title: 'Archivo requerido',
+                description: 'Selecciona un archivo de backup .json para restaurar.',
+            });
+            return;
+        }
+
+        if (!window.confirm('Esta accion reemplazara todos los datos actuales. ¿Querés continuar?')) {
+            return;
+        }
+
+        const file = fileInputRef.current.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        startTransition(async () => {
+            const result = await restoreBackup(formData);
+            if (result.success) {
+                toast({ title: 'Restauracion completa', description: result.message });
+                return;
+            }
+
+            toast({ variant: 'destructive', title: 'Error al restaurar', description: result.message });
+        });
+    };
+
     return (
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>Copia de Seguridad de Datos</CardTitle>
+                    <CardTitle>Backup Completo</CardTitle>
                     <CardDescription>
-                        Genera y descarga un archivo JSON con todos los datos importantes de la aplicación, incluyendo turnos, clientes, productos, servicios y usuarios.
+                        Genera y restaura un archivo JSON completo con datos críticos: turnos, clientes, productos, servicios, usuarios y configuración.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -58,13 +95,45 @@ export default function BackupPage() {
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle>Importante</AlertTitle>
                         <AlertDescription>
-                            Guardar este archivo en un lugar seguro. Contiene toda la información de tu negocio. Esta función no permite restaurar los datos automáticamente.
+                            El backup contiene datos sensibles (usuarios y configuración). Guardalo en un lugar seguro. La restauración reemplaza todos los datos actuales.
                         </AlertDescription>
                     </Alert>
-                    <Button onClick={handleCreateBackup} disabled={isPending} className="w-full md:w-auto">
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button onClick={handleCreateBackup} disabled={isPending} className="w-full md:w-auto">
+                            {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                            Descargar Backup Completo
+                        </Button>
+                    </div>
+
+                    <div className="space-y-2 rounded-lg border p-4">
+                        <Label htmlFor="restore-file">Restaurar desde backup</Label>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isPending}>
+                                <Upload className="mr-2 h-4 w-4" />
+                                Seleccionar Archivo
+                            </Button>
+                            {selectedFileName && (
+                                <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                                    <FileJson className="h-4 w-4" />
+                                    {selectedFileName}
+                                </span>
+                            )}
+                            <input
+                                id="restore-file"
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".json"
+                                className="hidden"
+                                onChange={handleFileChange}
+                            />
+                        </div>
+
+                        <Button variant="destructive" onClick={handleRestoreBackup} disabled={isPending || !selectedFileName} className="w-full md:w-auto">
                         {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                        Generar y Descargar Backup
-                    </Button>
+                        Restaurar Backup Completo
+                        </Button>
+                    </div>
                 </CardContent>
             </Card>
         </div>
