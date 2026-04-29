@@ -366,9 +366,9 @@ function MyDayPageContent() {
       setInitialAssignmentsCount(0);
       return;
     }
-    const normalized = (selectedAppt.assignments ?? []).map(a => ({
+    const normalized = (selectedAppt.assignments ?? []).map((a, index) => ({
       ...a,
-      productIds: a.productIds ?? [],
+      productIds: a.productIds ?? (index === 0 ? (selectedAppt.productIds ?? []) : []),
       status: a.status ?? 'pending',
     }));
     setDraftAssignments(normalized);
@@ -980,6 +980,23 @@ function MyDayPageContent() {
                         </span>
                       )}
                     </div>
+
+                    {!isEditingTurn && (editableAssignment.productIds ?? []).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {(editableAssignment.productIds ?? []).map((productId, productIndex) => {
+                          const product = allProducts.find(p => p.id === productId);
+                          return (
+                            <span
+                              key={`${productId}-${productIndex}`}
+                              className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-[11px]"
+                            >
+                              <Package className="h-3 w-3 text-muted-foreground" />
+                              {product?.name ?? 'Producto'}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     {/* Action button */}
                     {aStatus === 'pending' && (
