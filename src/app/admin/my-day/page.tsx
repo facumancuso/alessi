@@ -25,7 +25,7 @@ import { Separator } from '@/components/ui/separator';
 
 // ─── Catalog module-level cache (persists across navigations) ─────────────────
 let _catalogCache: { services: Service[]; products: Product[]; employees: AppUser[] } | null = null;
-let _catalogPromise: Promise<typeof _catalogCache> | null = null;
+let _catalogPromise: Promise<NonNullable<typeof _catalogCache>> | null = null;
 
 async function loadCatalogCached(): Promise<{ services: Service[]; products: Product[]; employees: AppUser[] }> {
   if (_catalogCache) return _catalogCache;
