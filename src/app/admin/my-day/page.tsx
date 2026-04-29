@@ -365,9 +365,25 @@ export default function MyDayPage() {
   const handleStatus = (status: 'pending' | 'in_progress' | 'completed', assignmentIdx: number) => {
     if (!selectedAppt || !currentUser) return;
 
+    // Optimistic update: reflect the change instantly in the UI
+    const applyOptimistic = (list: Appointment[]) =>
+      list.map(a => {
+        if (a.id !== selectedAppt.id) return a;
+        const newAssignments = (a.assignments ?? []).map((asgn, i) =>
+          i === assignmentIdx ? { ...asgn, status } : asgn
+        );
+        const allDone = newAssignments.every(x => (x.status ?? 'pending') === 'completed');
+        const anyGoing = newAssignments.some(x => (x.status ?? 'pending') === 'in_progress');
+        return { ...a, assignments: newAssignments, status: allDone ? 'completed' : anyGoing ? 'in_progress' : 'waiting' } as Appointment;
+      });
+
+    setDailyAppointments(prev => applyOptimistic(prev));
+    setAllAppointments(prev => applyOptimistic(prev));
+
     startTransition(async () => {
       try {
         await updateAssignmentStatus(selectedAppt.id, currentUser.id, status, assignmentIdx);
+        // Sync with server to confirm final state
         const all = await getAppointments();
         setAllAppointments(all);
         const today = all
@@ -387,6 +403,18 @@ export default function MyDayPage() {
           });
         setDailyAppointments(today);
       } catch (error) {
+        // Revert optimistic update on failure
+        const all = await getAppointments().catch(() => null);
+        if (all) {
+          setAllAppointments(all);
+          setDailyAppointments(
+            all.filter(a =>
+              (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
+              isToday(new Date(a.date)) &&
+              a.status !== 'cancelled'
+            )
+          );
+        }
         toast({
           title: 'Error al actualizar turno',
           description: error instanceof Error ? error.message : 'Ocurrió un error inesperado.',
