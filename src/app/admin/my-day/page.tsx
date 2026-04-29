@@ -24,18 +24,20 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 
 // ─── Catalog module-level cache (persists across navigations) ─────────────────
-let _catalogCache: { services: Service[]; products: Product[]; employees: AppUser[] } | null = null;
-let _catalogPromise: Promise<NonNullable<typeof _catalogCache>> | null = null;
+type CatalogData = { services: Service[]; products: Product[]; employees: AppUser[] };
 
-async function loadCatalogCached(): Promise<{ services: Service[]; products: Product[]; employees: AppUser[] }> {
+let _catalogCache: CatalogData | null = null;
+let _catalogPromise: Promise<CatalogData> | null = null;
+
+async function loadCatalogCached(): Promise<CatalogData> {
   if (_catalogCache) return _catalogCache;
-  if (_catalogPromise) return _catalogPromise as Promise<NonNullable<typeof _catalogCache>>;
+  if (_catalogPromise) return _catalogPromise;
   _catalogPromise = Promise.all([getServices(), getProducts(), getUsers()]).then(([services, products, users]) => {
     _catalogCache = { services, products, employees: users.filter(u => u.role === 'Peluquero' && u.isActive) };
     _catalogPromise = null;
     return _catalogCache;
   }).catch(err => { _catalogPromise = null; throw err; });
-  return _catalogPromise as Promise<NonNullable<typeof _catalogCache>>;
+  return _catalogPromise;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
