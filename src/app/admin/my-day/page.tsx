@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect, useRef, useTransition, useMemo } from 'react';
+import { useState, useEffect, useRef, useTransition, useMemo, Suspense } from 'react';
 import { getAppointments, getClientByEmail, getProducts, getServices, getUsers } from '@/lib/data';
 import type { Appointment, AppointmentAssignment, Client, Product, Service, User as AppUser } from '@/lib/types';
 import { isToday, format } from 'date-fns';
@@ -116,6 +116,18 @@ function ClientAvatar({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MyDayPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    }>
+      <MyDayPageContent />
+    </Suspense>
+  );
+}
+
+function MyDayPageContent() {
   const { currentUser } = useCurrentUser();
   const searchParams = useSearchParams();
   const { toast } = useToast();
