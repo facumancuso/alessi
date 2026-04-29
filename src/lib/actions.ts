@@ -256,50 +256,58 @@ export async function updateAssignmentStatus(
     employeeId: string,
     status: 'pending' | 'in_progress' | 'completed',
     assignmentIdx?: number
-): Promise<void> {
-    await connectToDatabase();
-    const appointment = await AppointmentModel.findById(appointmentId);
-    if (!appointment || !appointment.assignments || appointment.assignments.length === 0) {
-        throw new Error('Turno no encontrado.');
-    }
-
-    let targetIndex = -1;
-    if (typeof assignmentIdx === 'number') {
-        const assignment = appointment.assignments[assignmentIdx];
-        if (assignment && assignment.employeeId === employeeId) {
-            targetIndex = assignmentIdx;
+): Promise<{ error?: string }> {
+    try {
+        await connectToDatabase();
+        const appointment = await AppointmentModel.findById(appointmentId);
+        if (!appointment || !appointment.assignments || appointment.assignments.length === 0) {
+            return { error: 'Turno no encontrado.' };
         }
+
+        let targetIndex = -1;
+        if (typeof assignmentIdx === 'number') {
+            const assignment = appointment.assignments[assignmentIdx];
+            if (assignment && assignment.employeeId === employeeId) {
+                targetIndex = assignmentIdx;
+            }
+        }
+
+        if (targetIndex === -1) {
+            targetIndex = appointment.assignments.findIndex(a => a.employeeId === employeeId);
+        }
+
+        if (targetIndex === -1) {
+            return { error: 'Servicio no encontrado para este profesional.' };
+        }
+
+        appointment.assignments[targetIndex].status = status;
+        appointment.markModified('assignments');
+
+        const assignmentStatuses = (appointment.assignments || []).map(a => a.status ?? 'pending');
+        const allCompleted = assignmentStatuses.length > 0 && assignmentStatuses.every(s => s === 'completed');
+        const anyInProgress = assignmentStatuses.some(s => s === 'in_progress');
+
+        if (allCompleted) {
+            appointment.status = 'completed';
+        } else if (anyInProgress) {
+            appointment.status = 'in_progress';
+        } else {
+            appointment.status = 'waiting';
+        }
+
+        await appointment.save();
+        await clearDataReadCache();
+
+        revalidatePath('/admin/my-day');
+        revalidatePath('/admin/agenda');
+        revalidatePath('/admin');
+        revalidatePath('/admin/billing');
+
+        return {};
+    } catch (err) {
+        console.error('[updateAssignmentStatus]', err);
+        return { error: 'No se pudo actualizar el turno. Intentá de nuevo.' };
     }
-
-    if (targetIndex === -1) {
-        targetIndex = appointment.assignments.findIndex(a => a.employeeId === employeeId);
-    }
-
-    if (targetIndex === -1) {
-        throw new Error('Servicio no encontrado para este profesional.');
-    }
-
-    appointment.assignments[targetIndex].status = status;
-
-    const assignmentStatuses = (appointment.assignments || []).map(a => a.status ?? 'pending');
-    const allCompleted = assignmentStatuses.length > 0 && assignmentStatuses.every(s => s === 'completed');
-    const anyInProgress = assignmentStatuses.some(s => s === 'in_progress');
-
-    if (allCompleted) {
-        appointment.status = 'completed';
-    } else if (anyInProgress) {
-        appointment.status = 'in_progress';
-    } else {
-        appointment.status = 'waiting';
-    }
-
-    await appointment.save();
-    await clearDataReadCache();
-
-    revalidatePath('/admin/my-day');
-    revalidatePath('/admin/agenda');
-    revalidatePath('/admin');
-    revalidatePath('/admin/billing');
 }
 
 export async function billAllClientAppointments(appointmentIds: string[]) {

@@ -381,29 +381,10 @@ export default function MyDayPage() {
     setAllAppointments(prev => applyOptimistic(prev));
 
     startTransition(async () => {
-      try {
-        await updateAssignmentStatus(selectedAppt.id, currentUser.id, status, assignmentIdx);
-        // Sync with server to confirm final state
-        const all = await getAppointments();
-        setAllAppointments(all);
-        const today = all
-          .filter(a =>
-            (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
-            isToday(new Date(a.date)) &&
-            a.status !== 'cancelled'
-          )
-          .sort((a, b) => {
-            const t = (appt: Appointment) => {
-              const m = (appt.assignments ?? []).find(x => x.employeeId === currentUser.id);
-              return m?.time
-                ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${m.time}:00`).getTime()
-                : new Date(appt.date).getTime();
-            };
-            return t(a) - t(b);
-          });
-        setDailyAppointments(today);
-      } catch (error) {
-        // Revert optimistic update on failure
+      const result = await updateAssignmentStatus(selectedAppt.id, currentUser.id, status, assignmentIdx);
+
+      if (result.error) {
+        // Revert optimistic update
         const all = await getAppointments().catch(() => null);
         if (all) {
           setAllAppointments(all);
@@ -417,10 +398,31 @@ export default function MyDayPage() {
         }
         toast({
           title: 'Error al actualizar turno',
-          description: error instanceof Error ? error.message : 'Ocurrió un error inesperado.',
+          description: result.error,
           variant: 'destructive',
         });
+        return;
       }
+
+      // Sync with server to confirm final state
+      const all = await getAppointments();
+      setAllAppointments(all);
+      const today = all
+        .filter(a =>
+          (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
+          isToday(new Date(a.date)) &&
+          a.status !== 'cancelled'
+        )
+        .sort((a, b) => {
+          const t = (appt: Appointment) => {
+            const m = (appt.assignments ?? []).find(x => x.employeeId === currentUser.id);
+            return m?.time
+              ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${m.time}:00`).getTime()
+              : new Date(appt.date).getTime();
+          };
+          return t(a) - t(b);
+        });
+      setDailyAppointments(today);
     });
   };
 
