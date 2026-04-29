@@ -294,6 +294,7 @@ export async function updateAssignmentStatus(
     }
 
     await appointment.save();
+    await clearDataReadCache();
 
     revalidatePath('/admin/my-day');
     revalidatePath('/admin/agenda');

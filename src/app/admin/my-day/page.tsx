@@ -23,6 +23,21 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 
+// ─── Catalog module-level cache (persists across navigations) ─────────────────
+let _catalogCache: { services: Service[]; products: Product[]; employees: AppUser[] } | null = null;
+let _catalogPromise: Promise<typeof _catalogCache> | null = null;
+
+async function loadCatalogCached(): Promise<{ services: Service[]; products: Product[]; employees: AppUser[] }> {
+  if (_catalogCache) return _catalogCache;
+  if (_catalogPromise) return _catalogPromise as Promise<NonNullable<typeof _catalogCache>>;
+  _catalogPromise = Promise.all([getServices(), getProducts(), getUsers()]).then(([services, products, users]) => {
+    _catalogCache = { services, products, employees: users.filter(u => u.role === 'Peluquero' && u.isActive) };
+    _catalogPromise = null;
+    return _catalogCache;
+  }).catch(err => { _catalogPromise = null; throw err; });
+  return _catalogPromise as Promise<NonNullable<typeof _catalogCache>>;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getStatusInfo(status: Appointment['status']) {
@@ -307,25 +322,29 @@ export default function MyDayPage() {
   }, [selectedAppt?.id, selectedAppt?.notes]);
 
   useEffect(() => {
-    const loadCatalog = async () => {
-      setCatalogLoading(true);
-      try {
-        const [services, products, users] = await Promise.all([getServices(), getProducts(), getUsers()]);
-        setAllServices(services);
-        setAllProducts(products);
-        setEmployees(users.filter(u => u.role === 'Peluquero' && u.isActive));
-      } catch {
+    if (_catalogCache) {
+      setAllServices(_catalogCache.services);
+      setAllProducts(_catalogCache.products);
+      setEmployees(_catalogCache.employees);
+      return;
+    }
+    setCatalogLoading(true);
+    loadCatalogCached()
+      .then(catalog => {
+        setAllServices(catalog.services);
+        setAllProducts(catalog.products);
+        setEmployees(catalog.employees);
+      })
+      .catch(() => {
         toast({
           title: 'Error cargando catálogo',
           description: 'No se pudieron cargar servicios y productos.',
           variant: 'destructive',
         });
-      } finally {
-        setCatalogLoading(false);
-      }
-    };
-    loadCatalog();
-  }, [toast]);
+      })
+      .finally(() => setCatalogLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     setIsEditingTurn(false);
@@ -347,25 +366,33 @@ export default function MyDayPage() {
     if (!selectedAppt || !currentUser) return;
 
     startTransition(async () => {
-      await updateAssignmentStatus(selectedAppt.id, currentUser.id, status, assignmentIdx);
-      const all = await getAppointments();
-      setAllAppointments(all);
-      const today = all
-        .filter(a =>
-          (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
-          isToday(new Date(a.date)) &&
-          a.status !== 'cancelled'
-        )
-        .sort((a, b) => {
-          const t = (appt: Appointment) => {
-            const m = (appt.assignments ?? []).find(x => x.employeeId === currentUser.id);
-            return m?.time
-              ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${m.time}:00`).getTime()
-              : new Date(appt.date).getTime();
-          };
-          return t(a) - t(b);
+      try {
+        await updateAssignmentStatus(selectedAppt.id, currentUser.id, status, assignmentIdx);
+        const all = await getAppointments();
+        setAllAppointments(all);
+        const today = all
+          .filter(a =>
+            (a.assignments ?? []).some(x => x.employeeId === currentUser.id) &&
+            isToday(new Date(a.date)) &&
+            a.status !== 'cancelled'
+          )
+          .sort((a, b) => {
+            const t = (appt: Appointment) => {
+              const m = (appt.assignments ?? []).find(x => x.employeeId === currentUser.id);
+              return m?.time
+                ? new Date(`${format(new Date(appt.date), 'yyyy-MM-dd')}T${m.time}:00`).getTime()
+                : new Date(appt.date).getTime();
+            };
+            return t(a) - t(b);
+          });
+        setDailyAppointments(today);
+      } catch (error) {
+        toast({
+          title: 'Error al actualizar turno',
+          description: error instanceof Error ? error.message : 'Ocurrió un error inesperado.',
+          variant: 'destructive',
         });
-      setDailyAppointments(today);
+      }
     });
   };
 
