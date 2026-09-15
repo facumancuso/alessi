@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Logo } from "@/components/icons";
-import { LayoutDashboard, Settings, XCircle, LogOut, Users, CalendarCheck, Package, Scissors, User, CheckCircle, Briefcase, TrendingUp, DollarSign, Download, Loader2 } from "lucide-react";
+import { LayoutDashboard, Settings, XCircle, LogOut, Users, CalendarCheck, Package, Scissors, User, CheckCircle, Briefcase, TrendingUp, DollarSign, Download, Loader2, Sparkles } from "lucide-react";
 import { usePathname, useRouter } from 'next/navigation';
 import { getUserByEmail, getUsers } from "@/lib/data";
 import { useEffect, useMemo, useState } from "react";
@@ -41,6 +41,7 @@ const routePermissions: Record<string, UserType['role'][]> = {
     '/admin/employees': ['Superadmin', 'Gerente', 'Recepcion'],
     '/admin/settings': ['Superadmin'],
     '/admin/backup': ['Superadmin', 'Gerente'],
+    '/admin/ai-insights': ['Superadmin'],
 };
 
 export default function AdminLayout({
@@ -127,7 +128,7 @@ export default function AdminLayout({
     if (canManageInventory) routes.push('/admin/services', '/admin/products');
     if (canManageUsers) routes.push('/admin/users');
     if (canAccessBackup) routes.push('/admin/backup');
-    if (canAccessSettings) routes.push('/admin/settings');
+    if (canAccessSettings) routes.push('/admin/settings', '/admin/ai-insights');
 
     return routes;
   }, [
@@ -296,6 +297,14 @@ export default function AdminLayout({
                             <Link href="/admin/settings">
                             <Settings />
                             Configuración
+                            </Link>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton asChild isActive={pathname === '/admin/ai-insights'}>
+                            <Link href="/admin/ai-insights">
+                            <Sparkles />
+                            Asistente IA
                             </Link>
                         </SidebarMenuButton>
                     </SidebarMenuItem>

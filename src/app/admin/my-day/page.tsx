@@ -600,6 +600,11 @@ function MyDayPageContent() {
 
   const clientPhotoUrl = useMemo(() => getClientPhotoUrl(clientData), [clientData]);
 
+  const todayLabel = useMemo(() => {
+    const label = format(new Date(), "EEEE d 'de' MMMM", { locale: es });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -627,6 +632,10 @@ function MyDayPageContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Ficha de Cliente</h1>
           <p className="text-sm text-muted-foreground">Vista de atención al cliente en turno</p>
+          <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            <Calendar className="h-3.5 w-3.5" />
+            {todayLabel}
+          </p>
         </div>
         {selectedAppt && (
           <span className={cn(
