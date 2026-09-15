@@ -7,12 +7,13 @@ import { Separator } from '@/components/ui/separator';
 import type { Appointment, Service, Product } from '@/lib/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar, Scissors, Package, User, Briefcase, StickyNote, Loader2, CreditCard, Banknote } from 'lucide-react';
+import { Calendar, Scissors, Package, User, Briefcase, StickyNote, Loader2, CreditCard, Banknote, Check } from 'lucide-react';
 import { getServices, getProducts } from '@/lib/data';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { updateAppointment, billAllClientAppointments } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 interface BillingGroup {
     id: string;
@@ -36,6 +37,7 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup, onBill }: Bi
     const [notes, setNotes] = useState('');
     const [isSaving, startSaveTransition] = useTransition();
     const [isBilling, startBillTransition] = useTransition();
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | null>(null);
     const { toast } = useToast();
 
     useEffect(() => {
@@ -48,6 +50,11 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup, onBill }: Bi
             const combinedNotes = billingGroup.appointments.map(a => a.notes || '').filter(Boolean).join('\n---\n');
             setNotes(combinedNotes);
         }
+    }, [billingGroup]);
+
+    useEffect(() => {
+        const existingMethod = billingGroup?.appointments.find(a => a.paymentMethod)?.paymentMethod;
+        setPaymentMethod(existingMethod ?? null);
     }, [billingGroup]);
 
     const {
@@ -102,13 +109,17 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup, onBill }: Bi
     }, [billingGroup, allServices, allProducts]);
 
     const canBill = billingGroup?.appointments.some(a => a.status === 'completed') ?? false;
+    const isBilled = billingGroup?.appointments.some(a => a.status === 'facturado') ?? false;
 
     const handleBill = () => {
-        if (!billingGroup) return;
+        if (!billingGroup || !paymentMethod) return;
         startBillTransition(async () => {
             try {
-                await billAllClientAppointments(billingGroup.appointmentIds);
-                toast({ title: 'Turno/s cobrado/s', description: 'Los turnos fueron marcados como cobrados.' });
+                await billAllClientAppointments(billingGroup.appointmentIds, paymentMethod);
+                toast({
+                    title: 'Turno/s cobrado/s',
+                    description: `Los turnos fueron marcados como cobrados en ${paymentMethod === 'cash' ? 'efectivo' : 'tarjeta'}.`,
+                });
                 onBill?.();
                 onClose();
             } catch (e) {
@@ -224,19 +235,50 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup, onBill }: Bi
 
                     <Separator />
 
-                    {/* Totales */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-lg border bg-background px-3 py-3 text-center shadow-sm">
-                            <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1 mb-1">
-                                <CreditCard className="h-3.5 w-3.5" /> Total Tarjeta
+                    {/* Totales / selección de método de pago */}
+                    <div className="space-y-1.5">
+                        {canBill && (
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                ¿Cómo se cobró?
                             </p>
-                            <p className="text-xl font-bold tabular-nums">${grandTotal.toFixed(2)}</p>
-                        </div>
-                        <div className="rounded-lg border bg-background px-3 py-3 text-center shadow-sm">
-                            <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1 mb-1">
-                                <Banknote className="h-3.5 w-3.5" /> Total Efectivo
+                        )}
+                        {isBilled && paymentMethod && (
+                            <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                                <Check className="h-3.5 w-3.5" />
+                                Cobrado en {paymentMethod === 'cash' ? 'efectivo' : 'tarjeta'}
                             </p>
-                            <p className="text-xl font-bold tabular-nums">${grandTotalCash.toFixed(2)}</p>
+                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                disabled={!canBill}
+                                onClick={() => canBill && setPaymentMethod('card')}
+                                className={cn(
+                                    'rounded-lg border px-3 py-3 text-center shadow-sm transition-colors',
+                                    canBill && 'cursor-pointer hover:border-primary/50',
+                                    paymentMethod === 'card' ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'bg-background'
+                                )}
+                            >
+                                <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1 mb-1">
+                                    <CreditCard className="h-3.5 w-3.5" /> Total Tarjeta
+                                </p>
+                                <p className="text-xl font-bold tabular-nums">${grandTotal.toFixed(2)}</p>
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!canBill}
+                                onClick={() => canBill && setPaymentMethod('cash')}
+                                className={cn(
+                                    'rounded-lg border px-3 py-3 text-center shadow-sm transition-colors',
+                                    canBill && 'cursor-pointer hover:border-primary/50',
+                                    paymentMethod === 'cash' ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'bg-background'
+                                )}
+                            >
+                                <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1 mb-1">
+                                    <Banknote className="h-3.5 w-3.5" /> Total Efectivo
+                                </p>
+                                <p className="text-xl font-bold tabular-nums">${grandTotalCash.toFixed(2)}</p>
+                            </button>
                         </div>
                     </div>
 
@@ -266,7 +308,7 @@ export function BillingDetailModal({ isOpen, onClose, billingGroup, onBill }: Bi
                 <DialogFooter className="px-5 py-3 border-t shrink-0 flex-row gap-2">
                     <Button variant="outline" className="flex-1" onClick={onClose}>Cerrar</Button>
                     {canBill && (
-                        <Button className="flex-1" onClick={handleBill} disabled={isBilling}>
+                        <Button className="flex-1" onClick={handleBill} disabled={isBilling || !paymentMethod}>
                             {isBilling
                                 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 : <CreditCard className="mr-2 h-4 w-4" />

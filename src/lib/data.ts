@@ -258,6 +258,91 @@ export async function getAppointmentsInRange(startDate: Date, endDate: Date, sta
   });
 }
 
+export interface BillingGroupData {
+  id: string;
+  customerName: string;
+  customerEmail: string;
+  date: string;
+  appointments: Appointment[];
+  appointmentIds: string[];
+  totalServices: number;
+}
+
+// Paginated version of the billing page's client-day grouping. The billing
+// screen was fetching every appointment ever billed (thousands, growing
+// forever) just to show 10 grouped rows -- this groups by client+day in
+// Mongo first and only enriches the appointments belonging to the current
+// page's groups.
+export async function getBillingGroupsPaginated(params: {
+  status: 'completed' | 'facturado';
+  page?: number;
+  pageSize?: number;
+}): Promise<{ groups: BillingGroupData[]; total: number }> {
+  await connectToDatabase();
+
+  const page = Math.max(1, params.page || 1);
+  const pageSize = Math.min(Math.max(params.pageSize || 10, 1), 100);
+
+  const pipeline: any[] = [
+    {
+      $addFields: {
+        __d: { $convert: { input: '$date', to: 'date', onError: null, onNull: null } },
+      },
+    },
+    { $match: { status: params.status, __d: { $ne: null } } },
+    {
+      $addFields: {
+        __dayKey: { $dateToString: { format: '%Y-%m-%d', date: '$__d' } },
+      },
+    },
+    {
+      $group: {
+        _id: { email: '$customerEmail', day: '$__dayKey' },
+        customerName: { $first: '$customerName' },
+        date: { $min: '$__d' },
+        appointmentIds: { $push: { $toString: '$_id' } },
+        totalServices: { $sum: { $size: { $ifNull: ['$assignments', []] } } },
+      },
+    },
+    { $sort: { date: -1 } },
+    {
+      $facet: {
+        data: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }],
+        totalCount: [{ $count: 'count' }],
+      },
+    },
+  ];
+
+  const [result] = await AppointmentModel.aggregate(pipeline);
+  const rawGroups: any[] = result?.data || [];
+  const total = result?.totalCount?.[0]?.count || 0;
+
+  const allIds = rawGroups.flatMap((g) => g.appointmentIds as string[]);
+  const rawAppointments = allIds.length
+    ? await AppointmentModel.find({ _id: { $in: allIds } }).lean()
+    : [];
+  const enriched = await enrichAppointments(rawAppointments);
+  const byId = new Map(enriched.map((a) => [a.id, a]));
+
+  const groups: BillingGroupData[] = rawGroups.map((g) => {
+    const appointments = (g.appointmentIds as string[])
+      .map((id) => byId.get(id))
+      .filter((a): a is Appointment => Boolean(a));
+
+    return {
+      id: `${g._id.email}-${g._id.day}`,
+      customerName: g.customerName,
+      customerEmail: g._id.email,
+      date: new Date(g.date).toISOString(),
+      appointments,
+      appointmentIds: g.appointmentIds as string[],
+      totalServices: g.totalServices as number,
+    };
+  });
+
+  return { groups, total };
+}
+
 export async function getAppointmentById(id: string): Promise<Appointment | undefined> {
   return withReadCache(`appointments:id:${id}`, async () => {
     await connectToDatabase();
@@ -427,12 +512,19 @@ export async function batchCreateAppointmentsData(
   };
 }
 
-export async function updateClientAppointmentsStatus(appointmentIds: string[], status: Appointment['status']) {
+export async function updateClientAppointmentsStatus(
+  appointmentIds: string[],
+  status: Appointment['status'],
+  paymentMethod?: Appointment['paymentMethod'] | null
+) {
   await connectToDatabase();
-  await AppointmentModel.updateMany(
-    { _id: { $in: appointmentIds } },
-    { $set: { status } }
-  );
+  const update: Record<string, unknown> = { $set: { status } };
+  if (paymentMethod) {
+    (update.$set as Record<string, unknown>).paymentMethod = paymentMethod;
+  } else if (paymentMethod === null) {
+    update.$unset = { paymentMethod: '' };
+  }
+  await AppointmentModel.updateMany({ _id: { $in: appointmentIds } }, update);
   clearDataReadCache();
 }
 

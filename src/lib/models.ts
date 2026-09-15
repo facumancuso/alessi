@@ -93,6 +93,7 @@ const appointmentSchema = new Schema<Appointment>({
     default: 'confirmed'
   },
   notes: { type: String },
+  paymentMethod: { type: String, enum: ['cash', 'card'] },
   // Deprecated fields
   employeeId: { type: String },
   employeeName: { type: String },

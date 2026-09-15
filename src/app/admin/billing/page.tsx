@@ -18,11 +18,11 @@ import {
   } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getAppointments } from "@/lib/data";
+import { getAppointments, getBillingGroupsPaginated } from "@/lib/data";
 import { revertAllClientAppointments, billAllClientAppointments } from "@/lib/actions";
 import { format, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Undo2, DollarSign, Loader2 } from "lucide-react";
+import { Undo2, Loader2, Banknote, CreditCard } from "lucide-react";
 import { useTransition, useState, useEffect } from "react";
 import type { Appointment } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
@@ -73,14 +73,19 @@ function RevertButton({ appointmentIds, onRevert }: { appointmentIds: string[], 
 
 function BillButton({ appointmentIds, onBill }: { appointmentIds: string[], onBill: () => void }) {
     const [isPending, startTransition] = useTransition();
+    const [pendingMethod, setPendingMethod] = useState<'cash' | 'card' | null>(null);
     const { toast } = useToast();
 
-    const handleClick = (e: React.MouseEvent) => {
+    const handleClick = (e: React.MouseEvent, method: 'cash' | 'card') => {
         e.stopPropagation();
+        setPendingMethod(method);
         startTransition(async () => {
             try {
-                await billAllClientAppointments(appointmentIds);
-                toast({ title: "Turno/s facturado/s", description: "El grupo de turnos fue marcado como cobrado." });
+                await billAllClientAppointments(appointmentIds, method);
+                toast({
+                    title: "Turno/s facturado/s",
+                    description: `Cobrado en ${method === 'cash' ? 'efectivo' : 'tarjeta'}.`,
+                });
                 onBill();
             } catch (error) {
                 toast({
@@ -93,28 +98,36 @@ function BillButton({ appointmentIds, onBill }: { appointmentIds: string[], onBi
     }
 
     return (
-        <Button size="sm" onClick={handleClick} disabled={isPending}>
-            <DollarSign className="mr-2 h-4 w-4" />
-            {isPending ? "Facturando..." : "Cobrar"}
-        </Button>
+        <div className="flex gap-1">
+            <Button size="sm" variant="outline" onClick={(e) => handleClick(e, 'cash')} disabled={isPending}>
+                {isPending && pendingMethod === 'cash' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Banknote className="h-4 w-4" />}
+                <span className="hidden sm:inline ml-1.5">Efectivo</span>
+            </Button>
+            <Button size="sm" onClick={(e) => handleClick(e, 'card')} disabled={isPending}>
+                {isPending && pendingMethod === 'card' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                <span className="hidden sm:inline ml-1.5">Tarjeta</span>
+            </Button>
+        </div>
     )
 }
 
 function BulkBillBar({ selectedGroups, onBilled, onClear }: { selectedGroups: BillingGroup[], onBilled: () => void, onClear: () => void }) {
     const [isPending, startTransition] = useTransition();
+    const [pendingMethod, setPendingMethod] = useState<'cash' | 'card' | null>(null);
     const { toast } = useToast();
 
     if (selectedGroups.length === 0) return null;
 
     const appointmentIds = selectedGroups.flatMap(g => g.appointmentIds);
 
-    const handleClick = () => {
+    const handleClick = (method: 'cash' | 'card') => {
+        setPendingMethod(method);
         startTransition(async () => {
             try {
-                await billAllClientAppointments(appointmentIds);
+                await billAllClientAppointments(appointmentIds, method);
                 toast({
                     title: "Turnos facturados",
-                    description: `Se cobraron ${selectedGroups.length} cliente(s) (${appointmentIds.length} turno(s)).`,
+                    description: `Se cobraron ${selectedGroups.length} cliente(s) en ${method === 'cash' ? 'efectivo' : 'tarjeta'} (${appointmentIds.length} turno(s)).`,
                 });
                 onClear();
                 onBilled();
@@ -129,7 +142,7 @@ function BulkBillBar({ selectedGroups, onBilled, onClear }: { selectedGroups: Bi
     };
 
     return (
-        <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-2.5 mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/40 px-4 py-2.5 mb-3">
             <span className="text-sm font-medium">
                 {selectedGroups.length} cliente(s) seleccionado(s) &middot; {appointmentIds.length} turno(s)
             </span>
@@ -137,9 +150,13 @@ function BulkBillBar({ selectedGroups, onBilled, onClear }: { selectedGroups: Bi
                 <Button size="sm" variant="ghost" onClick={onClear} disabled={isPending}>
                     Deseleccionar
                 </Button>
-                <Button size="sm" onClick={handleClick} disabled={isPending}>
-                    <DollarSign className="mr-2 h-4 w-4" />
-                    {isPending ? "Facturando..." : `Cobrar seleccionados (${selectedGroups.length})`}
+                <Button size="sm" variant="outline" onClick={() => handleClick('cash')} disabled={isPending}>
+                    {isPending && pendingMethod === 'cash' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
+                    Efectivo ({selectedGroups.length})
+                </Button>
+                <Button size="sm" onClick={() => handleClick('card')} disabled={isPending}>
+                    {isPending && pendingMethod === 'card' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                    Tarjeta ({selectedGroups.length})
                 </Button>
             </div>
         </div>
@@ -229,6 +246,7 @@ function PaginatedAppointmentList({
     emptyMessage,
     isLoading,
     selection,
+    serverPaged,
  }: {
     groups: BillingGroup[],
     onRowClick: (group: BillingGroup) => void,
@@ -241,24 +259,38 @@ function PaginatedAppointmentList({
         onToggleAll: (checked: boolean, groupIds: string[]) => void,
         onSelectAllGroups: () => void,
     },
+    // When set, `groups` already IS the current page fetched from the
+    // server (grouping+pagination happened in Mongo) instead of the full
+    // list to be sliced client-side -- see admin/billing perf fix.
+    serverPaged?: {
+        page: number,
+        totalCount: number,
+        onPageChange: (page: number) => void,
+    },
 }) {
-    const [currentPage, setCurrentPage] = useState(1);
+    const [localPage, setLocalPage] = useState(1);
 
-    const totalPages = Math.ceil(groups.length / ITEMS_PER_PAGE);
-    const paginatedGroups = groups.slice(
-        (currentPage - 1) * ITEMS_PER_PAGE,
-        currentPage * ITEMS_PER_PAGE
-    );
+    const currentPage = serverPaged ? serverPaged.page : localPage;
+    const totalCount = serverPaged ? serverPaged.totalCount : groups.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
+    const paginatedGroups = serverPaged
+        ? groups
+        : groups.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+    const goToPage = (page: number) => {
+        if (serverPaged) serverPaged.onPageChange(page);
+        else setLocalPage(page);
+    };
 
     const handleNextPage = () => {
         if (currentPage < totalPages) {
-            setCurrentPage(currentPage + 1);
+            goToPage(currentPage + 1);
         }
     };
 
     const handlePreviousPage = () => {
         if (currentPage > 1) {
-            setCurrentPage(currentPage - 1);
+            goToPage(currentPage - 1);
         }
     };
 
@@ -268,16 +300,16 @@ function PaginatedAppointmentList({
 
     return (
         <Card>
-            {selection && groups.length > 0 && (
+            {selection && totalCount > 0 && (
                 <div className="flex items-center justify-between px-4 pt-4">
                     <span className="text-xs text-muted-foreground">
                         {selection.selectedIds.size > 0
-                            ? `${selection.selectedIds.size} de ${groups.length} seleccionados`
-                            : `${groups.length} en total`}
+                            ? `${selection.selectedIds.size} de ${totalCount} seleccionados`
+                            : `${totalCount} en total`}
                     </span>
-                    {groups.length > ITEMS_PER_PAGE && (
+                    {totalCount > ITEMS_PER_PAGE && (
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={selection.onSelectAllGroups}>
-                            Seleccionar los {groups.length} (todas las páginas)
+                            Seleccionar los {totalCount} (todas las páginas)
                         </Button>
                     )}
                 </div>
@@ -332,8 +364,16 @@ function PaginatedAppointmentList({
 
 export default function BillingPage() {
     const [completedGroups, setCompletedGroups] = useState<BillingGroup[]>([]);
-    const [billedGroups, setBilledGroups] = useState<BillingGroup[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // "Turnos Cobrados" is fetched paginated straight from Mongo (see
+    // getBillingGroupsPaginated) -- this list only ever grows, and fetching
+    // every billed appointment ever just to show 10 rows was what made the
+    // page take ~15s+ to load.
+    const [billedGroups, setBilledGroups] = useState<BillingGroup[]>([]);
+    const [billedTotal, setBilledTotal] = useState(0);
+    const [billedPage, setBilledPage] = useState(1);
+    const [billedLoading, setBilledLoading] = useState(true);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedGroup, setSelectedGroup] = useState<BillingGroup | null>(null);
@@ -363,22 +403,41 @@ export default function BillingPage() {
         return Object.values(grouped).sort((a,b) => b.date.getTime() - a.date.getTime());
     };
 
-    const fetchAppointments = async () => {
+    const fetchCompleted = async () => {
         setLoading(true);
-        const [completedData, billedData] = await Promise.all([
-            getAppointments('completed'),
-            getAppointments('facturado')
-        ]);
-
+        const completedData = await getAppointments('completed');
         setCompletedGroups(groupAppointments(completedData));
-        setBilledGroups(groupAppointments(billedData));
         setSelectedGroupIds(new Set());
         setLoading(false);
     };
 
+    const fetchBilled = async (page: number) => {
+        setBilledLoading(true);
+        const { groups, total } = await getBillingGroupsPaginated({ status: 'facturado', page, pageSize: ITEMS_PER_PAGE });
+        setBilledGroups(groups.map(g => ({ ...g, date: new Date(g.date) })));
+        setBilledTotal(total);
+        setBilledLoading(false);
+    };
+
     useEffect(() => {
-        fetchAppointments();
+        fetchCompleted();
     }, []);
+
+    useEffect(() => {
+        fetchBilled(billedPage);
+    }, [billedPage]);
+
+    // After billing or reverting a group it moves between the two lists, so
+    // both need refreshing; billed jumps back to page 1 since the changed
+    // item now sorts to the top of "Cobrados".
+    const refreshAfterBilling = () => {
+        fetchCompleted();
+        if (billedPage === 1) fetchBilled(1); else setBilledPage(1);
+    };
+    const refreshAfterRevert = () => {
+        fetchCompleted();
+        fetchBilled(billedPage);
+    };
 
     const handleRowClick = (group: BillingGroup) => {
         setSelectedGroup(group);
@@ -414,7 +473,7 @@ export default function BillingPage() {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 billingGroup={selectedGroup}
-                onBill={fetchAppointments}
+                onBill={refreshAfterBilling}
             />
             <Card>
                  <CardHeader>
@@ -430,7 +489,7 @@ export default function BillingPage() {
                         <TabsContent value="por-cobrar" className="mt-4">
                             <BulkBillBar
                                 selectedGroups={selectedPendingGroups}
-                                onBilled={fetchAppointments}
+                                onBilled={refreshAfterBilling}
                                 onClear={() => setSelectedGroupIds(new Set())}
                             />
                             <PaginatedAppointmentList
@@ -440,7 +499,7 @@ export default function BillingPage() {
                                     bill: (group) => (
                                         <BillButton
                                             appointmentIds={group.appointmentIds}
-                                            onBill={fetchAppointments}
+                                            onBill={refreshAfterBilling}
                                         />
                                     )
                                 }}
@@ -459,10 +518,15 @@ export default function BillingPage() {
                                 groups={billedGroups}
                                 onRowClick={handleRowClick}
                                 actionButtons={{
-                                    revert: (group) => <RevertButton appointmentIds={group.appointmentIds} onRevert={fetchAppointments} />
+                                    revert: (group) => <RevertButton appointmentIds={group.appointmentIds} onRevert={refreshAfterRevert} />
                                 }}
                                 emptyMessage="No hay turnos facturados."
-                                isLoading={loading}
+                                isLoading={billedLoading}
+                                serverPaged={{
+                                    page: billedPage,
+                                    totalCount: billedTotal,
+                                    onPageChange: setBilledPage,
+                                }}
                             />
                         </TabsContent>
                     </Tabs>

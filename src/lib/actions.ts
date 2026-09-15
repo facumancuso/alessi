@@ -305,13 +305,13 @@ export async function updateAssignmentStatus(
     }
 }
 
-export async function billAllClientAppointments(appointmentIds: string[]) {
-    await updateClientAppointmentsStatus(appointmentIds, 'facturado');
+export async function billAllClientAppointments(appointmentIds: string[], paymentMethod: 'cash' | 'card') {
+    await updateClientAppointmentsStatus(appointmentIds, 'facturado', paymentMethod);
     revalidatePath('/admin/billing');
 }
 
 export async function revertAllClientAppointments(appointmentIds: string[]) {
-    await updateClientAppointmentsStatus(appointmentIds, 'completed');
+    await updateClientAppointmentsStatus(appointmentIds, 'completed', null);
     revalidatePath('/admin/billing');
 }
 

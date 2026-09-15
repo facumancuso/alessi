@@ -600,10 +600,17 @@ function MyDayPageContent() {
 
   const clientPhotoUrl = useMemo(() => getClientPhotoUrl(clientData), [clientData]);
 
-  const todayLabel = useMemo(() => {
-    const label = format(new Date(), "EEEE d 'de' MMMM", { locale: es });
-    return label.charAt(0).toUpperCase() + label.slice(1);
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(interval);
   }, []);
+
+  const todayLabel = useMemo(() => {
+    const label = format(now, "EEEE d 'de' MMMM", { locale: es });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }, [now]);
+  const currentTimeLabel = useMemo(() => format(now, 'HH:mm:ss'), [now]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (loading) {
@@ -632,9 +639,11 @@ function MyDayPageContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Ficha de Cliente</h1>
           <p className="text-sm text-muted-foreground">Vista de atención al cliente en turno</p>
-          <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-            <Calendar className="h-3.5 w-3.5" />
+          <p className="mt-1.5 flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+            <Calendar className="h-6 w-6 text-muted-foreground" />
             {todayLabel}
+            <span className="text-muted-foreground">·</span>
+            <span className="tabular-nums">{currentTimeLabel}</span>
           </p>
         </div>
         {selectedAppt && (
