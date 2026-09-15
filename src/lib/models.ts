@@ -45,6 +45,8 @@ const clientSchema = new Schema<Client>({
   lastVisit: { type: String },
 }, { timestamps: true });
 
+clientSchema.index({ email: 1 });
+
 export const ClientModel = (models.Client as Model<Client>) || mongoose.model<Client>('Client', clientSchema);
 
 // ========= USER MODEL =========
@@ -95,6 +97,10 @@ const appointmentSchema = new Schema<Appointment>({
   serviceIds: [{ type: String }],
 }, { timestamps: true });
 
+appointmentSchema.index({ customerEmail: 1 });
+appointmentSchema.index({ date: 1 });
+appointmentSchema.index({ status: 1 });
+
 export const AppointmentModel = (models.Appointment as Model<Appointment>) || mongoose.model<Appointment>('Appointment', appointmentSchema);
 
 // ========= SETTINGS MODEL (for application settings) =========
@@ -114,3 +120,16 @@ const settingsSchema = new Schema<Settings>({
 }, { timestamps: true });
 
 export const SettingsModel = (models.Settings as Model<Settings>) || mongoose.model<Settings>('Settings', settingsSchema);
+
+// ========= COUNTER MODEL (for atomic sequential codes, e.g. client codes) =========
+interface Counter {
+  _id: string;
+  seq: number;
+}
+
+const counterSchema = new Schema<Counter>({
+  _id: { type: String, required: true },
+  seq: { type: Number, required: true, default: 0 },
+});
+
+export const CounterModel = (models.Counter as Model<Counter>) || mongoose.model<Counter>('Counter', counterSchema);

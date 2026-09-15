@@ -1,7 +1,7 @@
 'use server';
 
 import { connectToDatabase } from './mongodb';
-import { ServiceModel, ProductModel, ClientModel, UserModel, AppointmentModel, SettingsModel } from './models';
+import { ServiceModel, ProductModel, ClientModel, UserModel, AppointmentModel, SettingsModel, CounterModel } from './models';
 import type { Service, Appointment, Product, Client, User } from './types';
 
 const READ_CACHE_TTL_MS = 60_000;
@@ -440,6 +440,33 @@ export async function getClientByEmail(email: string): Promise<Client | undefine
   });
 }
 
+async function getNextClientCode(): Promise<string> {
+  // Ensure the counter exists without ever loading the whole clients collection.
+  await CounterModel.findByIdAndUpdate(
+    'clientCode',
+    { $setOnInsert: { seq: 0 } },
+    { new: true, upsert: true }
+  );
+
+  const counterDoc = await CounterModel.findById('clientCode').lean();
+  if (counterDoc && counterDoc.seq === 0) {
+    // One-time bootstrap from existing data, computed server-side (no document transfer).
+    const [result] = await ClientModel.aggregate([
+      { $addFields: { codeNum: { $convert: { input: '$code', to: 'int', onError: 0, onNull: 0 } } } },
+      { $group: { _id: null, max: { $max: '$codeNum' } } },
+    ]);
+    const bootstrapSeq = result?.max || 0;
+    await CounterModel.updateOne({ _id: 'clientCode', seq: 0 }, { $set: { seq: bootstrapSeq } });
+  }
+
+  const updated = await CounterModel.findByIdAndUpdate(
+    'clientCode',
+    { $inc: { seq: 1 } },
+    { new: true }
+  );
+  return updated!.seq.toString().padStart(4, '0');
+}
+
 export async function createClient(clientData: Partial<Omit<Client, 'id'>>): Promise<Client> {
   await connectToDatabase();
 
@@ -459,12 +486,7 @@ export async function createClient(clientData: Partial<Omit<Client, 'id'>>): Pro
 
   // Generate code if not provided
   if (!clientData.code) {
-    const allClients = await getClients();
-    const maxCode = allClients.reduce((max, client) => {
-      const clientCode = parseInt(client.code, 10);
-      return isNaN(clientCode) ? max : Math.max(max, clientCode);
-    }, 0);
-    clientData.code = (maxCode + 1).toString().padStart(4, '0');
+    clientData.code = await getNextClientCode();
   }
 
   // If no email is provided, create a temporary unique one
@@ -518,6 +540,16 @@ export async function batchCreateClients(clients: Partial<Client>[]): Promise<{ 
       await ClientModel.create(newClientData);
       createdCount++;
     }
+  }
+
+  // Keep the shared client-code counter in sync so future single createClient()
+  // calls (e.g. from public bookings) never reuse a code assigned by this import.
+  if (maxCode > 0) {
+    await CounterModel.findByIdAndUpdate(
+      'clientCode',
+      { $max: { seq: maxCode } },
+      { upsert: true }
+    );
   }
 
   clearDataReadCache();
