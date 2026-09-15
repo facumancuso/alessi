@@ -2,7 +2,7 @@
 
 import { connectToDatabase } from './mongodb';
 import { ServiceModel, ProductModel, ClientModel, UserModel, AppointmentModel, SettingsModel, CounterModel } from './models';
-import type { Service, Appointment, Product, Client, User } from './types';
+import type { Service, Appointment, AppointmentAssignment, Product, Client, User } from './types';
 
 const READ_CACHE_TTL_MS = 60_000;
 const readCache = new Map<string, { value: unknown; expiresAt: number }>();
@@ -172,48 +172,87 @@ export async function batchCreateProducts(products: Partial<Product>[]): Promise
 }
 
 // ========= APPOINTMENT FUNCTIONS =========
+async function enrichAppointments(appointments: any[]): Promise<Appointment[]> {
+  const allServices = await getServices();
+  const servicesMap = new Map(allServices.map(s => [s.id, s.name]));
+
+  const allUsers = await getUsers();
+  const usersMap = new Map(allUsers.map(u => [u.id, u.name]));
+
+  return appointments.map(appt => {
+    try {
+      const serviceIds = (appt.assignments || []).map((a: AppointmentAssignment) => a.serviceId);
+      const employeeIds = [...new Set<string>((appt.assignments || []).map((a: AppointmentAssignment) => a.employeeId))];
+
+      const normalizedDate = normalizeAppointmentDate(appt.date);
+      let finalDateStr = normalizedDate;
+      if (normalizedDate && appt.assignments && appt.assignments.length > 0 && appt.assignments[0].time) {
+        const datePart = normalizedDate.substring(0, 10);
+        finalDateStr = `${datePart}T${appt.assignments[0].time}:00`;
+      }
+
+      return {
+        ...appt,
+        id: appt._id!.toString(),
+        _id: undefined,
+        date: finalDateStr,
+        serviceIds: serviceIds,
+        serviceNames: serviceIds.map((id: string) => servicesMap.get(id) || 'Servicio Desconocido'),
+        employeeId: employeeIds[0] || appt.employeeId || '',
+        employeeName: employeeIds.map((id: string) => usersMap.get(id) || 'Empleado desc.').join(', ')
+      } as unknown as Appointment;
+    } catch (mapError) {
+      console.error('Error mapping appointment:', mapError, appt);
+      throw mapError;
+    }
+  });
+}
+
 export async function getAppointments(status?: Appointment['status']): Promise<Appointment[]> {
   return withReadCache(`appointments:status:${status || 'all'}`, async () => {
     try {
-    await connectToDatabase();
-    const filter = status ? { status } : {};
-    const appointments = await AppointmentModel.find(filter).lean();
-
-    const allServices = await getServices();
-    const servicesMap = new Map(allServices.map(s => [s.id, s.name]));
-
-    const allUsers = await getUsers();
-    const usersMap = new Map(allUsers.map(u => [u.id, u.name]));
-
-    return appointments.map(appt => {
-      try {
-        const serviceIds = (appt.assignments || []).map(a => a.serviceId);
-        const employeeIds = [...new Set((appt.assignments || []).map(a => a.employeeId))];
-
-        const normalizedDate = normalizeAppointmentDate(appt.date);
-        let finalDateStr = normalizedDate;
-        if (normalizedDate && appt.assignments && appt.assignments.length > 0 && appt.assignments[0].time) {
-          const datePart = normalizedDate.substring(0, 10);
-          finalDateStr = `${datePart}T${appt.assignments[0].time}:00`;
-        }
-
-        return {
-          ...appt,
-          id: appt._id!.toString(),
-          _id: undefined,
-          date: finalDateStr,
-          serviceIds: serviceIds,
-          serviceNames: serviceIds.map(id => servicesMap.get(id) || 'Servicio Desconocido'),
-          employeeId: employeeIds[0] || appt.employeeId || '',
-          employeeName: employeeIds.map(id => usersMap.get(id) || 'Empleado desc.').join(', ')
-        } as unknown as Appointment;
-      } catch (mapError) {
-        console.error('Error mapping appointment:', mapError, appt);
-        throw mapError;
-      }
-    });
+      await connectToDatabase();
+      const filter = status ? { status } : {};
+      const appointments = await AppointmentModel.find(filter).lean();
+      return enrichAppointments(appointments);
     } catch (error) {
       console.error('Error in getAppointments:', error);
+      throw error;
+    }
+  });
+}
+
+// Fetches only appointments whose date falls within [startDate, endDate].
+// Historical documents were written both as native BSON dates and as ISO
+// strings (leftover from the Firebase -> MongoDB migration), so the range
+// match is done with $convert instead of a plain field comparison: a plain
+// comparison only matches documents whose `date` is stored as the same BSON
+// type as the query value, which would silently drop half of the results.
+export async function getAppointmentsInRange(startDate: Date, endDate: Date, status?: Appointment['status']): Promise<Appointment[]> {
+  const cacheKey = `appointments:range:${startDate.toISOString()}:${endDate.toISOString()}:${status || 'all'}`;
+  return withReadCache(cacheKey, async () => {
+    try {
+      await connectToDatabase();
+      const matchStage: Record<string, unknown> = {
+        __normalizedDate: { $gte: startDate, $lte: endDate },
+      };
+      if (status) {
+        matchStage.status = status;
+      }
+      const appointments = await AppointmentModel.aggregate([
+        {
+          $addFields: {
+            __normalizedDate: {
+              $convert: { input: '$date', to: 'date', onError: null, onNull: null },
+            },
+          },
+        },
+        { $match: matchStage },
+        { $project: { __normalizedDate: 0 } },
+      ]);
+      return enrichAppointments(appointments);
+    } catch (error) {
+      console.error('Error in getAppointmentsInRange:', error);
       throw error;
     }
   });

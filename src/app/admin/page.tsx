@@ -16,7 +16,7 @@ import {
     CardTitle,
   } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getAppointments, getUsers } from "@/lib/data";
+import { getAppointmentsInRange, getUsers } from "@/lib/data";
 import { completeAppointment, deleteAppointment, exportAppointments, markAppointmentWaiting, startAppointment } from '@/lib/actions';
 import { format, isToday, isFuture, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -150,14 +150,25 @@ export default function DashboardPage() {
 
     const fetchPageData = () => {
         setLoading(true);
-        Promise.all([getAppointments(), getUsers()]).then(([appointments, users]) => {
+        // Only fetch a window around the selected day instead of the entire
+        // appointment history. The +/-1 day margin absorbs timezone edge
+        // cases; the exact-day filtering below (selectedDateAppointments,
+        // todayAppointments) still narrows it down precisely.
+        const rangeStart = new Date(selectedDate);
+        rangeStart.setDate(rangeStart.getDate() - 1);
+        rangeStart.setHours(0, 0, 0, 0);
+        const rangeEnd = new Date(selectedDate);
+        rangeEnd.setDate(rangeEnd.getDate() + 1);
+        rangeEnd.setHours(23, 59, 59, 999);
+
+        Promise.all([getAppointmentsInRange(rangeStart, rangeEnd), getUsers()]).then(([appointments, users]) => {
             setAllAppointments(appointments.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
             setAllEmployees(sortEmployeesByAgendaOrder(users.filter(u => u.role === 'Peluquero' && u.isActive)));
             setLoading(false);
         });
     };
 
-    useEffect(() => { fetchPageData(); }, [currentUser]);
+    useEffect(() => { fetchPageData(); }, [currentUser, selectedDate]);
 
     const selectedDateAppointments = useMemo(() =>
         allAppointments.filter(appt => isSameDay(new Date(appt.date), selectedDate)),

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getAppointments, getUsers, getAppointmentsByClient, getClientByEmail } from '@/lib/data';
+import { getAppointmentsInRange, getUsers, getAppointmentsByClient, getClientByEmail } from '@/lib/data';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, setHours, setMinutes, addMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Calendar as CalendarIcon, Filter, Clock, PlusCircle, Loader2, Upload, Download, User as UserIcon, Scissors } from 'lucide-react';
@@ -709,12 +709,47 @@ export default function AgendaPage() {
     }, [startHour, endHour, viewInterval]);
 
 
+  // Each tab only fetches the range it actually displays, and only when that
+  // range changes (switching tabs or picking a different day/week/month) --
+  // not the whole appointment history up front.
+  type AgendaViewMode = 'dia' | 'semana' | 'mes';
+  const [viewMode, setViewMode] = useState<AgendaViewMode>('dia');
+
+  const getAgendaFetchRange = (forDate: Date, mode: AgendaViewMode) => {
+      if (mode === 'semana') {
+          return {
+              rangeStart: startOfWeek(forDate, { locale: es }),
+              rangeEnd: endOfWeek(forDate, { locale: es }),
+          };
+      }
+      if (mode === 'mes') {
+          return {
+              rangeStart: startOfMonth(forDate),
+              rangeEnd: endOfMonth(forDate),
+          };
+      }
+      const rangeStart = new Date(forDate);
+      rangeStart.setDate(rangeStart.getDate() - 1);
+      rangeStart.setHours(0, 0, 0, 0);
+      const rangeEnd = new Date(forDate);
+      rangeEnd.setDate(rangeEnd.getDate() + 1);
+      rangeEnd.setHours(23, 59, 59, 999);
+      return { rangeStart, rangeEnd };
+  };
+
+  const periodKey = viewMode === 'mes'
+      ? `mes:${format(date, 'yyyy-MM')}`
+      : viewMode === 'semana'
+          ? `semana:${format(startOfWeek(date, { locale: es }), 'yyyy-MM-dd')}`
+          : `dia:${format(date, 'yyyy-MM-dd')}`;
+
   useEffect(() => {
         const fetchAgendaData = async () => {
             setLoading(true);
             try {
+                const { rangeStart, rangeEnd } = getAgendaFetchRange(date, viewMode);
                 const [appointmentsData, employeesData] = await Promise.all([
-                    getAppointments(),
+                    getAppointmentsInRange(rangeStart, rangeEnd),
                     getUsers().then(users => users.filter(u => u.role === 'Peluquero' && u.isActive))
                 ]);
 
@@ -738,12 +773,13 @@ export default function AgendaPage() {
         };
 
         fetchAgendaData();
-    
+
     const timer = setInterval(() => {
         setNow(new Date());
     }, 10000); // Update every 10 seconds
     return () => clearInterval(timer);
-    }, [toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [toast, periodKey]);
 
 
   const isHairdresser = currentUser?.role === 'Peluquero';
@@ -898,7 +934,8 @@ export default function AgendaPage() {
           toast({ title: 'Turno movido', description: `El turno fue actualizado correctamente.` });
 
           // Sin bloquear la UI, reconciliamos con estado servidor.
-          void getAppointments()
+          const { rangeStart, rangeEnd } = getAgendaFetchRange(date, viewMode);
+          void getAppointmentsInRange(rangeStart, rangeEnd)
               .then(setAppointments)
               .catch(() => {
                   // En caso de error de refresco mantenemos el estado optimista.
@@ -1075,7 +1112,7 @@ export default function AgendaPage() {
       />
       <input type="file" ref={importInputRef} className="hidden" onChange={handleFileImport} accept=".csv" />
       <div className="salon-shell space-y-4 md:space-y-5">
-        <Tabs defaultValue="dia">
+        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as AgendaViewMode)}>
           {!isReception && (
             <div className="flex justify-center mb-4">
               <TabsList className="agenda-tabs-list grid w-full max-w-md grid-cols-3">

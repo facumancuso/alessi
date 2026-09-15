@@ -1,7 +1,7 @@
 
 'use client';
 import { useState, useEffect, useRef, useTransition, useMemo, Suspense } from 'react';
-import { getAppointments, getClientByEmail, getProducts, getServices, getUsers } from '@/lib/data';
+import { getAppointmentsInRange, getAppointmentsByClient, getClientByEmail, getProducts, getServices, getUsers } from '@/lib/data';
 import type { Appointment, AppointmentAssignment, Client, Product, Service, User as AppUser } from '@/lib/types';
 import { isToday, format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -163,7 +163,16 @@ function MyDayPageContent() {
       }
 
       try {
-        const all = await getAppointments();
+        // Only today (+/-1 day margin for timezone edge cases) is needed here,
+        // not the whole appointment history -- this fetch used to run every
+        // 15s and pull every appointment ever created.
+        const rangeStart = new Date();
+        rangeStart.setDate(rangeStart.getDate() - 1);
+        rangeStart.setHours(0, 0, 0, 0);
+        const rangeEnd = new Date();
+        rangeEnd.setDate(rangeEnd.getDate() + 1);
+        rangeEnd.setHours(23, 59, 59, 999);
+        const all = await getAppointmentsInRange(rangeStart, rangeEnd);
 
         const requestedAppointment = requestedAppointmentId
           ? all.find(appt => appt.id === requestedAppointmentId)
@@ -263,11 +272,11 @@ function MyDayPageContent() {
       return;
     }
     setLoadingClient(true);
-    getClientByEmail(appt.customerEmail)
-      .then(client => {
+    Promise.all([getClientByEmail(appt.customerEmail), getAppointmentsByClient(appt.customerEmail)])
+      .then(([client, clientAppointments]) => {
         setClientData(client ?? null);
-        const appointmentsByClient = allAppointments
-          .filter(a => a.customerEmail === appt.customerEmail && a.id !== appt.id)
+        const appointmentsByClient = clientAppointments
+          .filter(a => a.id !== appt.id)
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
         const currentTimestamp = new Date(appt.date).getTime();
@@ -285,7 +294,8 @@ function MyDayPageContent() {
         setUpcomingVisits(upcoming);
       })
       .finally(() => setLoadingClient(false));
-  }, [selectedApptId, allAppointments]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedApptId]);
 
   const selectedAppt = useMemo(
     () => dailyAppointments.find(a => a.id === selectedApptId) ?? null,
@@ -403,7 +413,13 @@ function MyDayPageContent() {
       .then(result => {
         if (result.error) {
           // Revert optimistic update fetching fresh data from server
-          return getAppointments().then(all => {
+          const rangeStart = new Date();
+          rangeStart.setDate(rangeStart.getDate() - 1);
+          rangeStart.setHours(0, 0, 0, 0);
+          const rangeEnd = new Date();
+          rangeEnd.setDate(rangeEnd.getDate() + 1);
+          rangeEnd.setHours(23, 59, 59, 999);
+          return getAppointmentsInRange(rangeStart, rangeEnd).then(all => {
             setAllAppointments(all);
             setDailyAppointments(
               all.filter(a =>
