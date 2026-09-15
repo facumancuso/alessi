@@ -20,14 +20,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from '@/components/ui/input';
 import { ArrowUpRight, PlusCircle, Pencil, Trash2, Upload, Download, Search, Loader2, ArrowUpDown } from "lucide-react";
-import { getClients, getAppointments } from '@/lib/data';
-import { getAppointmentsByClient } from '@/lib/data';
+import { getClientsPaginated, type ClientListItem, type ClientSortKey } from '@/lib/data';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useState, useEffect, useMemo, useTransition, useRef } from 'react';
+import { useState, useEffect, useTransition, useRef } from 'react';
 import dynamic from 'next/dynamic';
 const ClientModal = dynamic(() => import('@/components/client-modal').then(m => m.ClientModal), { ssr: false, loading: () => null });
-import type { Appointment, Client } from '@/lib/types';
+import type { Client } from '@/lib/types';
 import { WhatsAppReminderButton } from '@/components/whatsapp-reminder-button';
 import { useCurrentUser } from '../user-context';
 import { exportClients, deleteClientAction, importClientsFromCsv } from '@/lib/actions';
@@ -36,11 +35,12 @@ import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-type ClientWithAppointments = Omit<Client, 'lastVisit'> & { allAppointments: Appointment[], totalAppointments: number, lastVisit: string };
-type SortableKeys = 'code' | 'name' | 'totalAppointments' | 'lastVisit';
+type ClientWithAppointments = ClientListItem;
+type SortableKeys = ClientSortKey;
 
 
-const ITEMS_PER_PAGE = 15;
+const ITEMS_PER_PAGE = 50;
+const SEARCH_DEBOUNCE_MS = 350;
 
 
 export default function ClientsPage() {
@@ -48,51 +48,43 @@ export default function ClientsPage() {
     const { currentUser } = useCurrentUser();
     const { toast } = useToast();
     const [clients, setClients] = useState<ClientWithAppointments[]>([]);
+    const [totalClients, setTotalClients] = useState(0);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedClient, setSelectedClient] = useState<Partial<Client> | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [isProcessing, startTransition] = useTransition();
     const [isImporting, setIsImporting] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
-    const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'lastVisit', direction: 'descending' });
+    const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'name', direction: 'ascending' });
     const importInputRef = useRef<HTMLInputElement>(null);
 
     const canManage = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
     const canImportExport = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente';
     const canViewClients = currentUser?.role === 'Superadmin' || currentUser?.role === 'Gerente' || currentUser?.role === 'Recepcion';
 
-    const fetchClientsAndAppointments = async () => {
-        const [baseClients, allAppointments] = await Promise.all([
-            getClients(),
-            getAppointments()
-        ]);
-        
-        // Create a map of appointments by client email for efficient lookup
-        const appointmentsByEmail = new Map<string, Appointment[]>();
-        allAppointments.forEach(appt => {
-            if (!appt.customerEmail) return;
-            const existing = appointmentsByEmail.get(appt.customerEmail) || [];
-            appointmentsByEmail.set(appt.customerEmail, [...existing, appt]);
-        });
+    // Debounce the search box so we don't fire a request on every keystroke.
+    useEffect(() => {
+        const handle = setTimeout(() => setDebouncedSearchTerm(searchTerm), SEARCH_DEBOUNCE_MS);
+        return () => clearTimeout(handle);
+    }, [searchTerm]);
 
-        const clientsWithAppointments = baseClients.map(client => {
-            const clientAppointments = appointmentsByEmail.get(client.email) || [];
-            const validAppointments = clientAppointments.filter(a => a.date);
-            const lastVisit = validAppointments.length > 0
-                ? validAppointments.reduce((latest, current) => new Date(current.date) > new Date(latest.date) ? current : latest).date
-                : new Date(0);
-            
-            return { 
-                ...client,
-                allAppointments: clientAppointments,
-                totalAppointments: clientAppointments.length,
-                lastVisit: new Date(lastVisit).toISOString()
-            };
-        });
+    // Reset to page 1 whenever the search or sort criteria change.
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [debouncedSearchTerm, sortConfig]);
 
-        setClients(clientsWithAppointments);
+    const fetchClientsPage = async () => {
+        const result = await getClientsPaginated({
+            page: currentPage,
+            pageSize: ITEMS_PER_PAGE,
+            search: debouncedSearchTerm,
+            sortKey: sortConfig.key,
+            sortDirection: sortConfig.direction,
+        });
+        setClients(result.clients);
+        setTotalClients(result.total);
     };
-
 
     useEffect(() => {
         if (!currentUser) return; // wait for context to populate
@@ -101,41 +93,12 @@ export default function ClientsPage() {
           return;
         }
         startTransition(async () => {
-            await fetchClientsAndAppointments();
+            await fetchClientsPage();
         });
-    }, [currentUser, canViewClients]);
-    
-    const sortedAndFilteredClients = useMemo(() => {
-        let sortableClients = [...clients];
-        
-        sortableClients.sort((a, b) => {
-            const aValue = a[sortConfig.key];
-            const bValue = b[sortConfig.key];
-            
-            if (aValue < bValue) {
-                return sortConfig.direction === 'ascending' ? -1 : 1;
-            }
-            if (aValue > bValue) {
-                return sortConfig.direction === 'ascending' ? 1 : -1;
-            }
-            return 0;
-        });
+    }, [currentUser, canViewClients, currentPage, debouncedSearchTerm, sortConfig]);
 
-        return sortableClients.filter(client => 
-            client.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            client.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            client.mobilePhone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            client.code?.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }, [clients, searchTerm, sortConfig]);
-
-    const totalPages = Math.ceil(sortedAndFilteredClients.length / ITEMS_PER_PAGE);
-    const paginatedClients = useMemo(() => {
-        return sortedAndFilteredClients.slice(
-            (currentPage - 1) * ITEMS_PER_PAGE,
-            currentPage * ITEMS_PER_PAGE
-        );
-    }, [sortedAndFilteredClients, currentPage]);
+    const totalPages = Math.max(1, Math.ceil(totalClients / ITEMS_PER_PAGE));
+    const paginatedClients = clients;
 
     const requestSort = (key: SortableKeys) => {
         let direction: 'ascending' | 'descending' = 'ascending';
@@ -180,7 +143,7 @@ export default function ClientsPage() {
         setSelectedClient(null);
         setIsModalOpen(false);
         startTransition(async () => {
-            await fetchClientsAndAppointments();
+            await fetchClientsPage();
         });
     }
 
@@ -209,7 +172,7 @@ export default function ClientsPage() {
                         title: 'Cliente eliminado',
                         description: `${name} ha sido eliminado correctamente`
                     });
-                    await fetchClientsAndAppointments();
+                    await fetchClientsPage();
                 } else {
                     toast({
                         variant: 'destructive',
@@ -254,7 +217,7 @@ export default function ClientsPage() {
                     description: `${result.createdCount || 0} clientes creados, ${result.updatedCount || 0} actualizados`,
                 });
                 
-                await fetchClientsAndAppointments();
+                await fetchClientsPage();
             } else {
                 toast({
                     variant: 'destructive',
@@ -324,7 +287,7 @@ export default function ClientsPage() {
                         <div>
                             <div className="flex items-center gap-2">
                                 <CardTitle>Gestión de Clientes</CardTitle>
-                                <Badge variant="secondary">{clients.length} Clientes</Badge>
+                                <Badge variant="secondary">{totalClients} Clientes</Badge>
                                 {isImporting && (
                                     <Badge variant="outline" className="animate-pulse">
                                         <Loader2 className="mr-1 h-3 w-3 animate-spin" />

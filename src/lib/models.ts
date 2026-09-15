@@ -46,6 +46,8 @@ const clientSchema = new Schema<Client>({
 }, { timestamps: true });
 
 clientSchema.index({ email: 1 });
+clientSchema.index({ name: 1 });
+clientSchema.index({ code: 1 });
 
 export const ClientModel = (models.Client as Model<Client>) || mongoose.model<Client>('Client', clientSchema);
 

@@ -470,6 +470,129 @@ export async function searchClients(query: string, limit = 40): Promise<Client[]
   return clients.map(c => ({ ...c, id: c._id.toString(), _id: undefined } as unknown as Client));
 }
 
+export type ClientListItem = Client & { totalAppointments: number; lastVisit: string; allAppointments: Appointment[] };
+export type ClientSortKey = 'code' | 'name' | 'totalAppointments' | 'lastVisit';
+
+// Paginated, server-filtered client list for the admin clients table. Only the
+// current page's worth of clients (and their appointments) ever crosses the
+// wire, instead of the whole collection — with 10k+ clients that full-collection
+// fetch is what made the page take 30s+ to load.
+export async function getClientsPaginated(params: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  sortKey?: ClientSortKey;
+  sortDirection?: 'ascending' | 'descending';
+}): Promise<{ clients: ClientListItem[]; total: number }> {
+  await connectToDatabase();
+
+  const page = Math.max(1, params.page || 1);
+  const pageSize = Math.min(Math.max(params.pageSize || 50, 1), 200);
+  const sortKey: ClientSortKey = (['code', 'name', 'totalAppointments', 'lastVisit'] as const).includes(params.sortKey as ClientSortKey)
+    ? (params.sortKey as ClientSortKey)
+    : 'name';
+  const sortDir = params.sortDirection === 'descending' ? -1 : 1;
+
+  const matchStage: Record<string, unknown> = {};
+  const normalizedSearch = (params.search || '').trim();
+  if (normalizedSearch) {
+    const escaped = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'i');
+    matchStage.$or = [
+      { name: regex },
+      { email: regex },
+      { code: regex },
+      { mobilePhone: regex },
+    ];
+  }
+
+  let rawClients: any[];
+  let total: number;
+
+  if (sortKey === 'code' || sortKey === 'name') {
+    // Sorting on plain client fields needs no join: filter/sort/paginate stays
+    // in Mongo and we only enrich the resulting page below.
+    const [docs, count] = await Promise.all([
+      ClientModel.find(matchStage)
+        .sort({ [sortKey]: sortDir })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .lean(),
+      ClientModel.countDocuments(matchStage),
+    ]);
+    rawClients = docs;
+    total = count;
+  } else {
+    // Sorting by appointment-derived fields requires those stats for every
+    // matching client before we know which page slice is correct.
+    const pipeline: any[] = [];
+    if (Object.keys(matchStage).length) pipeline.push({ $match: matchStage });
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'appointments',
+          localField: 'email',
+          foreignField: 'customerEmail',
+          pipeline: [{ $project: { date: 1, _id: 0 } }],
+          as: '__appts',
+        },
+      },
+      {
+        $addFields: {
+          totalAppointments: { $size: '$__appts' },
+          __lastVisit: {
+            $convert: { input: { $max: '$__appts.date' }, to: 'date', onError: null, onNull: null },
+          },
+        },
+      },
+      { $project: { __appts: 0 } },
+      { $sort: { [sortKey === 'lastVisit' ? '__lastVisit' : 'totalAppointments']: sortDir } },
+      {
+        $facet: {
+          data: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }],
+          totalCount: [{ $count: 'count' }],
+        },
+      }
+    );
+
+    const [result] = await ClientModel.aggregate(pipeline);
+    rawClients = result?.data || [];
+    total = result?.totalCount?.[0]?.count || 0;
+  }
+
+  const emails = rawClients.map((c) => c.email).filter(Boolean);
+  const relatedAppointments = emails.length
+    ? await AppointmentModel.find({ customerEmail: { $in: emails } }).select('customerEmail date status -_id').lean()
+    : [];
+
+  const appointmentsByEmail = new Map<string, Appointment[]>();
+  relatedAppointments.forEach((appt: any) => {
+    const list = appointmentsByEmail.get(appt.customerEmail) || [];
+    list.push(appt as unknown as Appointment);
+    appointmentsByEmail.set(appt.customerEmail, list);
+  });
+
+  const clients: ClientListItem[] = rawClients.map((c) => {
+    const clientAppointments = appointmentsByEmail.get(c.email) || [];
+    const validAppointments = clientAppointments.filter((a) => a.date);
+    const lastVisit = validAppointments.length
+      ? validAppointments.reduce((latest, current) => (new Date(current.date) > new Date(latest.date) ? current : latest)).date
+      : new Date(0).toISOString();
+
+    return {
+      ...c,
+      id: c._id.toString(),
+      _id: undefined,
+      __lastVisit: undefined,
+      allAppointments: clientAppointments,
+      totalAppointments: clientAppointments.length,
+      lastVisit: new Date(lastVisit).toISOString(),
+    } as unknown as ClientListItem;
+  });
+
+  return { clients, total };
+}
+
 export async function getClientByEmail(email: string): Promise<Client | undefined> {
   return withReadCache(`clients:email:${email}`, async () => {
     await connectToDatabase();
